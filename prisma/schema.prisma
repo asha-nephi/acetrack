@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        String   // "site_manager", "factory_manager", "md", "admin"
+  phone       String?
+  isActive    Boolean  @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  snags        Snag[]          @relation("ReportedSnags")
+  attendance   AttendanceLog[]
+  notifications Notification[]
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  client      String?
+  location    String
+  description String?
+  status      String   @default("active") // "active", "completed", "on_hold", "archived"
+  startDate   String?
+  endDate     String?
+  progressPct Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  snags        Snag[]
+  materials    Material[]
+  tasks        Task[]
+  documents    Document[]
+  hseEntries   HSEEntry[]
+  attendance   AttendanceLog[]
+}
+
+model Snag {
+  id             String   @id @default(uuid())
+  title          String
+  description    String
+  severity       String   // "minor", "major", "critical"
+  status         String   @default("open") // "open", "in_progress", "resolved"
+  x              Float
+  y              Float
+  assignee       String?
+  resolutionNote String?
+  photoUrl       String?
+
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id])
+
+  reporterId     String
+  reporter       User     @relation("ReportedSnags", fields: [reporterId], references: [id])
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Material {
+  id          String   @id // Often a real barcode (e.g. ACE-G-4042)
+  type        String
+  description String
+  dimensions  String
+  destination String
+  status      String   @default("In Transit") // "In Transit", "Received", "Damaged"
+  supplier    String?
+  quantity    String?
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  status      String   @default("todo") // "todo", "doing", "blocked", "done"
+  assignee    String
+  dueDate     String
+  priority    String   @default("medium") // "low", "medium", "high"
+  comments    String?
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Document {
+  id          String   @id @default(uuid())
+  title       String
+  category    String   // "Shop Drawings", "Method Statements", "Safety Data Sheets", "Structural Calcs"
+  rev         String
+  status      String   // "Approved for Construction", "For Review", "Information Only"
+  date        String
+  size        String?
+  url         String?
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model HSEEntry {
+  id          String   @id @default(uuid())
+  type        String   // "Incident", "Near Miss", "Toolbox Talk", "PPE Check", "Inspection"
+  description String
+  severity    String?  // "low", "medium", "high" — for incidents
+  actionTaken String?
+  reportedBy  String
+  date        DateTime @default(now())
+
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AttendanceLog {
+  id          String    @id @default(uuid())
+  workerName  String
+  company     String?   // company if sub-contractor
+  role        String
+  timeIn      DateTime  @default(now())
+  timeOut     DateTime?
+  date        DateTime  @default(now())
+  notes       String?
+
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  title     String
+  message   String
+  type      String   // "snag", "task", "document", "system"
+  isRead    Boolean  @default(false)
+  link      String?  // e.g. "/snagging"
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+}
