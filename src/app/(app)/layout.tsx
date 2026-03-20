@@ -241,9 +241,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                                 </div>
                             )}
                         </div>
-                        <Link href="/settings" className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-surface-muted">
-                            <UserIcon size={20} className="text-text-muted" />
+                        <Link href="/settings" className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-muted">
+                            <Settings size={18} className="text-text-muted" />
                         </Link>
+                        <button onClick={handleLogout} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-surface-muted text-red-500">
+                            <LogOut size={18} />
+                        </button>
                     </div>
                 </header>
 

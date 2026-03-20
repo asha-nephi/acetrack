@@ -100,16 +100,21 @@ export default function PeoplePage() {
         }
         setSaving(true);
         try {
-            await addDoc(collection(db, 'users'), {
-                ...form,
-                isActive: true,
-                createdAt: Timestamp.now(),
-                updatedAt: Timestamp.now()
+            const res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(form)
             });
+            
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.message || 'Failed to create user');
+            }
+            
             setIsSheetOpen(false);
             setForm({ name: '', email: '', password: '', role: 'supervisor', phone: '' });
-        } catch (e) {
-            setFormError('Failed to create user');
+        } catch (e: any) {
+            setFormError(e.message || 'Failed to create user');
         }
         setSaving(false);
     };
@@ -300,8 +305,19 @@ export default function PeoplePage() {
                         <label className="block text-[10px] font-black text-text-muted uppercase tracking-widest mb-2">Site Access Level</label>
                         <div className="grid grid-cols-2 gap-2">
                             {ROLES.map(r => (
-                                <button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} className={`py-3 px-4 rounded-2xl text-xs font-bold border-2 text-left flex items-center gap-2 transition-all ${form.role === r ? 'border-primary-600 bg-primary-50 text-primary-700 shadow-sm' : 'border-border bg-surface text-text-muted hover:border-text-muted/20'}`}>
-                                    <Shield size={14} className={form.role === r ? 'text-primary-600' : 'text-text-muted/40'} /> {ROLE_LABELS[r]}
+                                <button key={r} onClick={() => setForm(f => ({ ...f, role: r }))} className={`py-3 px-4 rounded-2xl text-xs font-bold border-2 text-left flex flex-col gap-1 transition-all ${form.role === r ? 'border-primary-600 bg-primary-50 text-primary-700 shadow-sm' : 'border-border bg-surface text-text-muted hover:border-text-muted/20'}`}>
+                                    <div className="flex items-center gap-2">
+                                        <Shield size={14} className={form.role === r ? 'text-primary-600' : 'text-text-muted/40'} /> 
+                                        {ROLE_LABELS[r]}
+                                    </div>
+                                    <span className="text-[9px] font-normal opacity-80 leading-tight">
+                                        {r === 'admin' ? 'Full system control' :
+                                         r === 'md' ? 'Executive overview' :
+                                         r === 'site_manager' ? 'Manage sites' :
+                                         r === 'supervisor' ? 'Log progress' :
+                                         r === 'factory_manager' ? 'Manage materials' : 
+                                         'Read-only access'}
+                                    </span>
                                 </button>
                             ))}
                         </div>

@@ -55,26 +55,33 @@ export default function DashboardPage() {
         const unsubProjects = onSnapshot(qProjects, (snap) => {
             setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Project[]);
             setStats(prev => ({ ...prev, activeProjects: snap.size }));
+        }, (error) => {
+            console.error("Error fetching projects:", error);
+            setLoading(false);
         });
 
         // Real-time Snags Count
         const qSnags = query(collection(db, 'snags'), where('status', '!=', 'resolved'));
         const unsubSnags = onSnapshot(qSnags, (snap) => {
             setStats(prev => ({ ...prev, openSnags: snap.size }));
-        });
+        }, (error) => console.error(error));
 
         // Real-time Tasks Count
         const qTasks = query(collection(db, 'tasks'));
         const unsubTasks = onSnapshot(qTasks, (snap) => {
             const done = snap.docs.filter(d => d.data().status === 'done').length;
             setStats(prev => ({ ...prev, totalTasks: snap.size, doneTasks: done }));
-        });
+        }, (error) => console.error(error));
 
         // Combined Activity Listener
-        // Since we can't easily join in Firestore, we listen to the last 5 from all main collections
         const qRecentTasks = query(collection(db, 'tasks'), orderBy('updatedAt', 'desc'), limit(5));
         const qRecentSnags = query(collection(db, 'snags'), orderBy('updatedAt', 'desc'), limit(5));
         
+        // Safety timeout to ensure loading state clears even if there's no data or an error
+        const loadingTimeout = setTimeout(() => {
+            setLoading(false);
+        }, 2000);
+
         const activityMap: Record<string, Activity> = {};
         const updateActivity = () => {
              const combined = Object.values(activityMap)
@@ -86,6 +93,7 @@ export default function DashboardPage() {
                 .slice(0, 8);
              setActivity(combined);
              setLoading(false);
+             clearTimeout(loadingTimeout);
         };
 
         const unsubRecentTasks = onSnapshot(qRecentTasks, (snap) => {
@@ -96,6 +104,9 @@ export default function DashboardPage() {
                     meta: '', status: data.status, date: data.updatedAt || data.createdAt
                 };
             });
+            updateActivity();
+        }, (error) => {
+            console.error("Tasks error:", error);
             updateActivity();
         });
 
@@ -108,9 +119,13 @@ export default function DashboardPage() {
                 };
             });
             updateActivity();
+        }, (error) => {
+            console.error("Snags error:", error);
+            updateActivity();
         });
 
         return () => {
+            clearTimeout(loadingTimeout);
             unsubProjects(); unsubSnags(); unsubTasks(); unsubRecentTasks(); unsubRecentSnags();
             window.removeEventListener('online', handleStatusChange);
             window.removeEventListener('offline', handleStatusChange);
