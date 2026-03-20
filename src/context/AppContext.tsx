@@ -12,6 +12,7 @@ export interface User {
     id?: string;
     name: string;
     role: UserRole;
+    permissions?: string[];
     isLoggedIn: boolean;
 }
 
@@ -56,6 +57,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 id: (session.user as any).id as string,
                 name: session.user.name || '',
                 role: (session.user as any).role as UserRole,
+                permissions: (session.user as any).permissions as string[] || [],
                 isLoggedIn: true
             });
 
@@ -66,7 +68,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     const userData = snap.docs[0].data();
                     setUser(prev => ({
                         ...prev,
-                        role: userData.role as UserRole
+                        role: userData.role as UserRole,
+                        permissions: userData.permissions as string[] || []
                     }));
                 }
             });
