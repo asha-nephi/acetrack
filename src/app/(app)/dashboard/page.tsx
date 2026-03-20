@@ -15,12 +15,12 @@ interface Project { id: string; name: string; client?: string | null; location: 
 interface Activity { id: string; type: 'snag' | 'task' | 'hse' | 'daily_log'; title: string; subtitle: string; meta: string; status: string; date: any; }
 
 const QUICK_ACTIONS = [
-    { label: 'Daily Progress', desc: 'Briefing, Tools & Photos', href: '/daily-report', icon: TrendingUp, color: 'bg-emerald-50 border-emerald-100 text-emerald-600' },
-    { label: 'QA Snagging', desc: 'Log defects on blueprint', href: '/snagging', icon: MapPin, color: 'bg-red-50 border-red-100 text-red-600' },
-    { label: 'Task Board', desc: 'Manage daily operations', href: '/tasks', icon: Kanban, color: 'bg-purple-50 border-purple-100 text-purple-600' },
-    { label: 'Attendance', desc: "Sign in today's workers", href: '/attendance', icon: HardHat, color: 'bg-amber-50 border-amber-100 text-amber-600' },
-    { label: 'HSE Log', desc: 'Safety incidents & talks', href: '/hse', icon: Shield, color: 'bg-orange-50 border-orange-100 text-orange-600' },
-    { label: 'Delivery Scan', desc: 'Receive materials', href: '/material-scanner', icon: Package, color: 'bg-blue-50 border-blue-100 text-blue-600' },
+    { label: 'Daily Progress', desc: 'Briefing, Tools & Photos', href: '/daily-report', icon: TrendingUp },
+    { label: 'QA Snagging', desc: 'Log defects on blueprint', href: '/snagging', icon: MapPin },
+    { label: 'Task Board', desc: 'Manage daily operations', href: '/tasks', icon: Kanban },
+    { label: 'Attendance', desc: "Sign in today's workers", href: '/attendance', icon: HardHat },
+    { label: 'HSE Log', desc: 'Safety incidents & talks', href: '/hse', icon: Shield },
+    { label: 'Delivery Scan', desc: 'Receive materials', href: '/scanner', icon: Package },
 ];
 
 const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
@@ -55,6 +55,7 @@ export default function DashboardPage() {
         const unsubProjects = onSnapshot(qProjects, (snap) => {
             setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Project[]);
             setStats(prev => ({ ...prev, activeProjects: snap.size }));
+            setLoading(false);
         }, (error) => {
             console.error("Error fetching projects:", error);
             setLoading(false);
@@ -169,14 +170,14 @@ export default function DashboardPage() {
             {/* Stats Row — 5 cards */}
             <div className="grid grid-cols-5 gap-2">
                 {[
-                    { label: 'Active Sites', value: stats.activeProjects, color: 'bg-primary-50 border-primary-100 text-primary-900' },
-                    { label: 'Open Snags', value: stats.openSnags, color: 'bg-red-50 border-red-100 text-red-900' },
-                    { label: 'Tasks', value: stats.totalTasks, color: 'bg-purple-50 border-purple-100 text-purple-900' },
-                    { label: 'Done', value: stats.doneTasks, color: 'bg-emerald-50 border-emerald-100 text-emerald-900' },
-                    { label: 'HSE / Mo.', value: stats.activeProjects > 0 ? 'Logged' : '0', color: 'bg-amber-50 border-amber-100 text-amber-900' },
+                    { label: 'Active Sites', value: stats.activeProjects, color: 'text-primary-600' },
+                    { label: 'Open Snags', value: stats.openSnags, color: 'text-text-main' },
+                    { label: 'Tasks', value: stats.totalTasks, color: 'text-text-main' },
+                    { label: 'Done', value: stats.doneTasks, color: 'text-text-main' },
+                    { label: 'HSE / Mo.', value: stats.activeProjects > 0 ? 'Logged' : '0', color: 'text-text-main' },
                 ].map(s => (
-                    <div key={s.label} className={`rounded-xl border p-2.5 text-center ${s.color}`}>
-                        <p className="text-xl font-black">{loading && s.value === 0 ? '—' : s.value}</p>
+                    <div key={s.label} className="rounded-xl border border-border bg-surface p-2.5 text-center transition-all hover:border-primary-200">
+                        <p className={`text-xl font-black ${s.color}`}>{loading && s.value === 0 ? '—' : s.value}</p>
                         <p className="text-[9px] font-bold uppercase tracking-wide opacity-70 mt-0.5 leading-tight">{s.label}</p>
                     </div>
                 ))}
@@ -187,9 +188,9 @@ export default function DashboardPage() {
                 <h2 className="text-sm font-bold text-text-muted uppercase tracking-wider mb-3">Quick Actions</h2>
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
                     {QUICK_ACTIONS.map(a => (
-                        <Link key={a.href} href={a.href} className={`flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 ${a.color} hover:shadow-md hover:-translate-y-0.5 transition-all group`}>
-                            <a.icon size={22} />
-                            <span className="text-[10px] font-bold text-text-main text-center leading-tight group-hover:text-primary-700 transition-colors">{a.label}</span>
+                        <Link key={a.href} href={a.href} className="flex flex-col items-center gap-1.5 p-3 rounded-2xl border-2 border-border bg-surface hover:border-primary-400 hover:shadow-md hover:-translate-y-0.5 transition-all group">
+                            <a.icon size={22} className="text-text-muted group-hover:text-primary-600 transition-colors" />
+                            <span className="text-[10px] font-bold text-text-main text-center leading-tight group-hover:text-primary-600 transition-colors">{a.label}</span>
                         </Link>
                     ))}
                 </div>

@@ -18,7 +18,7 @@ function getAdminDb() {
 
 export async function POST(req: Request) {
     try {
-        const { name, email, password, role } = await req.json();
+        const { name, email, password, role, permissions = [] } = await req.json();
 
         if (!name || !email || !password || !role) {
             return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
@@ -39,11 +39,13 @@ export async function POST(req: Request) {
             email,
             password: hashedPassword,
             role,
+            permissions,
             createdAt: new Date().toISOString(),
             status: 'active',
+            isActive: true,
         });
 
-        return NextResponse.json({ user: { id: docRef.id, name, email, role }, message: 'User created successfully' }, { status: 201 });
+        return NextResponse.json({ user: { id: docRef.id, name, email, role, permissions }, message: 'User created successfully' }, { status: 201 });
     } catch (error) {
         console.error('Registration error:', error);
         return NextResponse.json({ message: 'An error occurred during registration' }, { status: 500 });

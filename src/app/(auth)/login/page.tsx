@@ -13,6 +13,7 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [successAnim, setSuccessAnim] = useState(false);
     const router = useRouter();
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -36,20 +37,39 @@ export default function LoginPage() {
             setError('Invalid email or password');
             setLoading(false);
         } else {
-            router.push('/dashboard');
-            router.refresh();
+            setSuccessAnim(true);
+            setTimeout(() => {
+                router.push('/dashboard');
+            }, 1200); // 1.2s delay for the animation to play
         }
     };
 
+    if (successAnim) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-primary-600 px-4 animate-in fade-in duration-500 Zoom-in transition-all">
+                <div className="w-20 h-20 bg-surface rounded-3xl flex items-center justify-center text-primary-600 mb-6 shadow-2xl animate-bounce">
+                    <Building2 size={40} />
+                </div>
+                <h2 className="text-white text-2xl font-black mb-2 animate-pulse">Welcome back</h2>
+                <p className="text-primary-100/80 text-sm font-medium">Preparing your workspace...</p>
+                <div className="mt-8 flex gap-2">
+                    <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '-0.3s' }} />
+                    <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '-0.15s' }} />
+                    <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-            <div className="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl shadow-blue-900/5">
+        <div className="min-h-screen flex items-center justify-center bg-background px-4">
+            <div className="max-w-md w-full bg-surface p-8 rounded-2xl shadow-xl border border-border">
                 <div className="flex flex-col items-center mb-8">
-                    <div className="w-16 h-16 bg-blue-700 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-blue-700/30">
+                    <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-primary-600/30">
                         <Building2 size={32} />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900">AceTrack OS</h1>
-                    <p className="text-gray-500 text-sm mt-1">Facade Project Operating System</p>
+                    <h1 className="text-2xl font-bold text-text-main">AceTrack OS</h1>
+                    <p className="text-text-muted text-sm mt-1">Facade Project Operating System</p>
                 </div>
 
                 {error && (
@@ -73,13 +93,13 @@ export default function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                     />
-                    <Button fullWidth onClick={handleLogin} disabled={!email || !password || loading}>
-                        {loading ? 'Authenticating...' : 'Sign In'}
+                    <Button fullWidth onClick={(e: any) => handleLogin(e)} disabled={!email || !password || loading}>
+                        {loading && !successAnim ? 'Authenticating...' : 'Sign In'}
                     </Button>
                 </form>
 
-                <p className="text-center text-sm text-gray-500 mt-8">
-                    Don't have an account? <Link href="/register" className="text-blue-600 hover:underline font-semibold">Register here</Link>
+                <p className="text-center text-sm text-text-muted mt-8">
+                    Don't have an account? <Link href="/register" className="text-primary-600 hover:underline font-semibold">Register here</Link>
                 </p>
             </div>
         </div>

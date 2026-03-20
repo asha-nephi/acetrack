@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Clock, Kanban, Plus, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useAppContext } from '@/context/AppContext';
 
 type TaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
 
@@ -40,6 +41,7 @@ const PRIO_STYLE: Record<string, string> = {
 };
 
 export default function KanbanBoardPage() {
+    const { user } = useAppContext();
     const [tasks, setTasks] = useState<KanbanTask[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState('');
@@ -78,19 +80,43 @@ export default function KanbanBoardPage() {
     }, []);
 
     useEffect(() => {
-        if (!selectedProject) return;
+        if (!selectedProject || !user.id) return;
         setLoading(true);
-        const q = query(
-            collection(db, 'tasks'), 
-            where('projectId', '==', selectedProject),
-            orderBy('createdAt', 'desc')
-        );
+        
+        const canManageAll = user.role === 'admin' || user.role === 'md' || user.role === 'executive_director' || user.permissions?.includes('manage_tasks');
+        
+        let q;
+        if (canManageAll) {
+            q = query(
+                collection(db, 'tasks'), 
+                where('projectId', '==', selectedProject),
+                orderBy('createdAt', 'desc')
+            );
+        } else {
+            // Note: This requires a composite index in Firestore for projectId and assignee if orderBy is used, 
+            // but we can omit orderBy here and just sort in memory if needed, or assume index exists.
+            q = query(
+                collection(db, 'tasks'), 
+                where('projectId', '==', selectedProject),
+                where('assignee', '==', user.name)
+            );
+        }
         
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const tasksData = snapshot.docs.map(doc => ({
+            let tasksData = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             })) as KanbanTask[];
+            
+            if (!canManageAll) {
+                // Sort in memory since we omitted orderBy to avoid immediate index issues
+                tasksData.sort((a, b) => {
+                    const tA = a.createdAt?.toMillis() || 0;
+                    const tB = b.createdAt?.toMillis() || 0;
+                    return tB - tA;
+                });
+            }
+            
             setTasks(tasksData);
             setLoading(false);
         }, (err) => {
@@ -193,9 +219,11 @@ export default function KanbanBoardPage() {
                         </div>
                         <p className="text-sm text-text-muted">Manage daily operations across all trades.</p>
                     </div>
-                    <button onClick={createNewTask} disabled={!selectedProject} className="flex items-center gap-1.5 bg-primary-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-primary-600/20 hover:bg-primary-700 transition-all active:scale-95 disabled:opacity-50 text-sm">
-                        <Plus size={16} /> New Task
-                    </button>
+                    {(user.role === 'admin' || user.role === 'md' || user.role === 'executive_director' || user.permissions?.includes('manage_tasks')) && (
+                        <button onClick={createNewTask} disabled={!selectedProject} className="flex items-center gap-1.5 bg-primary-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-primary-600/20 hover:bg-primary-700 transition-all active:scale-95 disabled:opacity-50 text-sm">
+                            <Plus size={16} /> New Task
+                        </button>
+                    )}
                 </div>
                 {/* Project selector */}
                 {projects.length > 0 && (

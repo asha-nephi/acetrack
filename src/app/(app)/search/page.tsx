@@ -65,19 +65,19 @@ export default function SearchPage() {
 
         const allResults: SearchResult[] = [
             ...projects.filter(p => p.name.toLowerCase().includes(s) || p.client.toLowerCase().includes(s)).map(p => ({
-                id: p.id, type: 'project' as const, title: p.name, subtitle: p.client, status: p.status, href: `/projects`, icon: Folder, color: 'text-primary-600', bg: 'bg-primary-50'
+                id: p.id, type: 'project' as const, title: p.name, subtitle: p.client, status: p.status, href: `/projects`, icon: Folder, color: 'text-text-muted', bg: 'bg-surface border border-border'
             })),
             ...tasks.filter(t => t.title.toLowerCase().includes(s) || t.description?.toLowerCase().includes(s)).map(t => ({
-                id: t.id, type: 'task' as const, title: t.title, subtitle: t.projectName || 'General Task', status: t.status, href: '/tasks', icon: Kanban, color: 'text-blue-600', bg: 'bg-blue-50'
+                id: t.id, type: 'task' as const, title: t.title, subtitle: t.projectName || 'General Task', status: t.status, href: '/tasks', icon: Kanban, color: 'text-text-muted', bg: 'bg-surface border border-border'
             })),
             ...snags.filter(sn => sn.title.toLowerCase().includes(s) || sn.description?.toLowerCase().includes(s)).map(sn => ({
-                id: sn.id, type: 'snag' as const, title: sn.title, subtitle: `Level ${sn.level} - ${sn.location || 'Site'}`, status: sn.status, href: '/snagging', icon: MapPin, color: 'text-red-600', bg: 'bg-red-50'
+                id: sn.id, type: 'snag' as const, title: sn.title, subtitle: `Level ${sn.level} - ${sn.location || 'Site'}`, status: sn.status, href: '/snagging', icon: MapPin, color: 'text-text-muted', bg: 'bg-surface border border-border'
             })),
             ...materials.filter(m => m.itemName.toLowerCase().includes(s) || m.materialId.toLowerCase().includes(s)).map(m => ({
-                id: m.id, type: 'material' as const, title: m.itemName, subtitle: `ID: ${m.materialId} • ${m.quantity} ${m.unit}`, status: m.status, href: '/scanner', icon: Package, color: 'text-amber-600', bg: 'bg-amber-50'
+                id: m.id, type: 'material' as const, title: m.itemName, subtitle: `ID: ${m.materialId} • ${m.quantity} ${m.unit}`, status: m.status, href: '/scanner', icon: Package, color: 'text-text-muted', bg: 'bg-surface border border-border'
             })),
             ...users.filter(u => u.name.toLowerCase().includes(s) || u.role.toLowerCase().includes(s)).map(u => ({
-                id: u.id, type: 'person' as const, title: u.name, subtitle: u.role.replace('_', ' '), href: '/people', icon: User, color: 'text-emerald-600', bg: 'bg-emerald-50'
+                id: u.id, type: 'person' as const, title: u.name, subtitle: u.role.replace('_', ' '), href: '/people', icon: User, color: 'text-text-muted', bg: 'bg-surface border border-border'
             }))
         ];
 
@@ -113,7 +113,7 @@ export default function SearchPage() {
                         placeholder="Search project items, ID codes, staff names..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-surface border-2 border-border rounded-2xl pl-12 pr-4 py-4 text-lg font-medium text-text-main focus:outline-none focus:border-primary-500 transition-all shadow-sm focus:shadow-md"
+                        className="w-full bg-surface border-2 border-border rounded-2xl pl-10 pr-3 py-3 text-base placeholder:text-sm font-medium text-text-main focus:outline-none focus:border-primary-500 transition-all shadow-sm focus:shadow-md"
                         autoFocus
                     />
                 </div>

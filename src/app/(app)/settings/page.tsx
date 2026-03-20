@@ -22,8 +22,9 @@ const COLORS = [
 const ROLE_LABELS: Record<string, string> = {
     admin: 'Administrator',
     md: 'Managing Director',
-    site_manager: 'Site Manager',
-    factory_manager: 'Factory Head',
+    executive_director: 'Executive Director',
+    supervisor: 'Site Supervisor',
+    factory_head: 'Factory Head',
 };
 
 export default function SettingsPage() {

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useAppContext } from '@/context/AppContext';
-import { Eye, EyeOff, Shield, UserCheck, UserPlus, UserX, Users, Cloud, CloudOff, Mail, Phone, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Eye, EyeOff, Shield, UserCheck, UserPlus, UserX, Users, Cloud, CloudOff, Mail, Phone, ShieldCheck, CheckCircle2, Megaphone, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface User {
@@ -15,39 +15,49 @@ interface User {
     name: string;
     email: string;
     role: string;
+    permissions?: string[];
     phone?: string | null;
     isActive: boolean;
     createdAt: any;
 }
 
-const ROLES = ['admin', 'md', 'site_manager', 'supervisor', 'factory_manager', 'viewer'];
+const ROLES = ['admin', 'md', 'executive_director', 'supervisor', 'factory_head'];
 const ROLE_LABELS: Record<string, string> = {
     admin: 'Administrator',
     md: 'Managing Director',
-    site_manager: 'Site Manager',
+    executive_director: 'Executive Director',
     supervisor: 'Site Supervisor',
-    factory_manager: 'Factory Head',
-    viewer: 'Viewer Only',
+    factory_head: 'Factory Head'
 };
 
 const ROLE_COLORS: Record<string, string> = {
-    admin: 'bg-red-100 text-red-700 border-red-200',
-    md: 'bg-purple-100 text-purple-700 border-purple-200',
-    site_manager: 'bg-blue-100 text-blue-700 border-blue-200',
-    supervisor: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    factory_manager: 'bg-amber-100 text-amber-700 border-amber-200',
-    viewer: 'bg-gray-100 text-gray-700 border-gray-100',
+    admin: 'bg-surface border-border text-text-main',
+    md: 'bg-surface border-border text-text-main',
+    executive_director: 'bg-surface border-border text-text-main',
+    supervisor: 'bg-surface border-border text-text-main',
+    factory_head: 'bg-surface border-border text-text-main'
 };
+
+const AVAILABLE_PERMISSIONS = [
+    { id: 'create_projects', label: 'Create Projects' },
+    { id: 'manage_users', label: 'Manage Users' },
+    { id: 'broadcast_messages', label: 'Broadcast Messages' },
+    { id: 'manage_tasks', label: 'Manage Tasks' },
+    { id: 'view_financials', label: 'View Financials' },
+];
 
 export default function PeoplePage() {
     const { user: currentUser } = useAppContext();
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
+    const [broadcastMsg, setBroadcastMsg] = useState('');
+    const [sendingBroadcast, setSendingBroadcast] = useState(false);
     const [showPwd, setShowPwd] = useState(false);
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState('');
-    const [form, setForm] = useState({ name: '', email: '', password: '', role: 'supervisor', phone: '' });
+    const [form, setForm] = useState<{name: string, email: string, password: string, role: string, phone: string, permissions: string[]}>({ name: '', email: '', password: '', role: 'supervisor', phone: '', permissions: [] });
     const [isOnline, setIsOnline] = useState(true);
 
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'md';
@@ -112,11 +122,36 @@ export default function PeoplePage() {
             }
             
             setIsSheetOpen(false);
-            setForm({ name: '', email: '', password: '', role: 'supervisor', phone: '' });
+            setForm({ name: '', email: '', password: '', role: 'supervisor', phone: '', permissions: [] });
         } catch (e: any) {
             setFormError(e.message || 'Failed to create user');
         }
         setSaving(false);
+    };
+
+    const handleBroadcast = async () => {
+        if (!broadcastMsg.trim()) return;
+        setSendingBroadcast(true);
+        try {
+            const batchPromises = activeUsers.map(user => 
+                addDoc(collection(db, 'notifications'), {
+                    userId: user.id,
+                    title: 'System Broadcast',
+                    message: broadcastMsg,
+                    read: false,
+                    type: 'system',
+                    createdAt: Timestamp.now()
+                })
+            );
+            await Promise.all(batchPromises);
+            setIsBroadcastOpen(false);
+            setBroadcastMsg('');
+            alert('Broadcast sent successfully.');
+        } catch (e) {
+            console.error(e);
+            alert('Failed to send broadcast');
+        }
+        setSendingBroadcast(false);
     };
 
     const activeUsers = users.filter(u => u.isActive);
@@ -140,11 +175,18 @@ export default function PeoplePage() {
                     </div>
                     <p className="text-text-muted text-sm mt-0.5">Manage roles and permissions for site staff.</p>
                 </div>
-                {isAdmin && (
-                    <Button onClick={() => setIsSheetOpen(true)} className="flex items-center gap-2">
-                        <UserPlus size={16} /> Add Member
-                    </Button>
-                )}
+                <div className="flex items-center gap-2">
+                    {(isAdmin || currentUser.permissions?.includes('broadcast_messages')) && (
+                        <Button variant="secondary" size="sm" onClick={() => setIsBroadcastOpen(true)} className="flex items-center gap-1.5 px-3">
+                            <Megaphone size={14} /> <span className="hidden sm:inline">Broadcast</span>
+                        </Button>
+                    )}
+                    {isAdmin && (
+                        <Button size="sm" onClick={() => setIsSheetOpen(true)} className="flex items-center gap-1.5 px-3">
+                            <UserPlus size={14} /> <span className="hidden sm:inline">Add Member</span>
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Stats */}
@@ -158,8 +200,8 @@ export default function PeoplePage() {
                     <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Admins/MD</p>
                 </Card>
                 <Card className="p-4 flex flex-col items-center justify-center text-center space-y-1">
-                    <p className="text-2xl font-black text-blue-600">{users.filter(m => m.role === 'site_manager').length}</p>
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Managers</p>
+                    <p className="text-2xl font-black text-blue-600">{users.filter(m => m.role === 'executive_director').length}</p>
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Directors</p>
                 </Card>
                 <Card className="p-4 flex flex-col items-center justify-center text-center space-y-1">
                     <p className="text-2xl font-black text-emerald-600">{users.filter(m => m.role === 'supervisor').length}</p>
@@ -275,8 +317,8 @@ export default function PeoplePage() {
                         <p className="text-text-muted pl-5 border-l-2 border-primary-100 italic leading-relaxed">Full system governance. Access to global settings, user management, and advanced reporting. Can override any site logs.</p>
                     </div>
                     <div className="space-y-2">
-                        <p className="font-black text-text-main flex items-center gap-2 uppercase tracking-tight"><CheckCircle2 size={12} className="text-blue-600" /> Site Managers</p>
-                        <p className="text-text-muted pl-5 border-l-2 border-blue-100 italic leading-relaxed">Operational oversight. Full access to Task Boards, QA Snagging, and Project Timelines. Can assign work to Supervisors.</p>
+                        <p className="font-black text-text-main flex items-center gap-2 uppercase tracking-tight"><CheckCircle2 size={12} className="text-blue-600" /> Executive Directors</p>
+                        <p className="text-text-muted pl-5 border-l-2 border-blue-100 italic leading-relaxed">High-level operational oversight. Full access to Task Boards, QA Snagging, and Project Timelines. Also functions as Site Supervisor.</p>
                     </div>
                     <div className="space-y-2">
                         <p className="font-black text-text-main flex items-center gap-2 uppercase tracking-tight"><CheckCircle2 size={12} className="text-emerald-600" /> Site Supervisors</p>
@@ -313,12 +355,35 @@ export default function PeoplePage() {
                                     <span className="text-[9px] font-normal opacity-80 leading-tight">
                                         {r === 'admin' ? 'Full system control' :
                                          r === 'md' ? 'Executive overview' :
-                                         r === 'site_manager' ? 'Manage sites' :
+                                         r === 'executive_director' ? 'Exec oversight' :
                                          r === 'supervisor' ? 'Log progress' :
-                                         r === 'factory_manager' ? 'Manage materials' : 
+                                         r === 'factory_head' ? 'Manage materials' : 
                                          'Read-only access'}
                                     </span>
                                 </button>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label className="block text-[10px] font-black text-text-muted uppercase tracking-widest mb-2 mt-2">Granular Permissions</label>
+                        <div className="space-y-2 bg-surface/50 p-4 rounded-2xl border border-border">
+                            {AVAILABLE_PERMISSIONS.map(p => (
+                                <label key={p.id} className="flex items-center gap-3 cursor-pointer group">
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${form.permissions.includes(p.id) ? 'bg-primary-600 border-primary-600' : 'border-border group-hover:border-primary-400'}`}>
+                                        {form.permissions.includes(p.id) && <CheckCircle2 size={12} className="text-white" />}
+                                    </div>
+                                    <span className="text-xs font-bold text-text-main">{p.label}</span>
+                                    <input 
+                                        type="checkbox" 
+                                        className="hidden" 
+                                        checked={form.permissions.includes(p.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setForm(f => ({ ...f, permissions: [...f.permissions, p.id] }));
+                                            else setForm(f => ({ ...f, permissions: f.permissions.filter(perm => perm !== p.id) }));
+                                        }}
+                                    />
+                                </label>
                             ))}
                         </div>
                     </div>
@@ -334,6 +399,35 @@ export default function PeoplePage() {
                         </Button>
                     </div>
                     <p className="text-[10px] text-center text-text-muted italic px-4">Accounts provisioned here are immediately available for sign-in over the site network. Permissions sync across all supervisor devices in real-time.</p>
+                </div>
+            </BottomSheet>
+
+            {/* Broadcast Sheet */}
+            <BottomSheet isOpen={isBroadcastOpen} onClose={() => setIsBroadcastOpen(false)} title="Broadcast Message">
+                <div className="space-y-4 pb-6">
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold text-text-main">Message</label>
+                        <textarea 
+                            value={broadcastMsg}
+                            onChange={e => setBroadcastMsg(e.target.value)}
+                            placeholder="Type your message to all staff..."
+                            className="w-full bg-surface border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 min-h-[120px] resize-y"
+                        />
+                    </div>
+                    <Button fullWidth onClick={handleBroadcast} disabled={sendingBroadcast || !broadcastMsg.trim()}>
+                        {sendingBroadcast ? (
+                            <div className="flex items-center justify-center gap-2">
+                                <Send size={16} className="animate-pulse" /> Sending...
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center gap-2">
+                                <Send size={16} /> Send Broadcast
+                            </div>
+                        )}
+                    </Button>
+                    <p className="text-[10px] text-center text-text-muted italic px-4">
+                        This message will be pushed to {activeUsers.length} active staff members and appear in their notification center.
+                    </p>
                 </div>
             </BottomSheet>
         </div>

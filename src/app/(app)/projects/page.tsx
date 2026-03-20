@@ -151,9 +151,11 @@ export default function ProjectsPage() {
                     </div>
                     <p className="text-text-muted text-sm mt-0.5">Manage all Ace Facades site projects.</p>
                 </div>
-                <Button onClick={openNew} className="flex items-center gap-2">
-                    <Plus size={16} /> New Project
-                </Button>
+                {(currentUser.role === 'admin' || currentUser.role === 'md' || currentUser.permissions?.includes('create_projects')) && (
+                    <Button onClick={openNew} className="flex items-center gap-2">
+                        <Plus size={16} /> New Project
+                    </Button>
+                )}
             </div>
 
             {projects.length === 0 ? (

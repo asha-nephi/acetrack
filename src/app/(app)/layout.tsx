@@ -82,8 +82,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const handleLogout = () => { logout(); router.push('/login'); };
 
     const isAdmin = user.role === 'admin' || user.role === 'md';
-    const isSiteManager = user.role === 'site_manager' || isAdmin;
-    const isFactory = user.role === 'factory_manager' || isAdmin;
+    const canManageTasks = user.permissions?.includes('manage_tasks') || user.role === 'executive_director' || isAdmin;
+    const isFactory = user.role === 'factory_head' || isAdmin;
 
     const navSections = [
         {
@@ -92,7 +92,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 { name: 'Dashboard', href: '/dashboard', icon: <Home size={18} /> },
                 { name: 'Search', href: '/search', icon: <Search size={18} /> },
                 { name: 'Daily Progress', href: '/daily-report', icon: <Plus size={18} /> },
-                ...(isSiteManager ? [
+                ...(canManageTasks ? [
                     { name: 'Task Board', href: '/tasks', icon: <Kanban size={18} /> },
                     { name: 'QA Snagging', href: '/snagging', icon: <MapPin size={18} /> },
                 ] : []),
@@ -127,7 +127,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         { name: 'Home', href: '/dashboard', icon: <Home size={22} /> },
         { name: 'Search', href: '/search', icon: <Search size={22} /> },
         { name: 'Daily', href: '/daily-report', icon: <Plus size={22} /> },
-        ...(isSiteManager ? [{ name: 'Tasks', href: '/tasks', icon: <Kanban size={22} /> }] : []),
+        ...(canManageTasks ? [{ name: 'Tasks', href: '/tasks', icon: <Kanban size={22} /> }] : []),
         { name: 'HSE', href: '/hse', icon: <Shield size={22} /> },
     ].slice(0, 5);
 

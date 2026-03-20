@@ -6,7 +6,7 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 // Define the shape of our User and Settings
-export type UserRole = 'site_manager' | 'factory_manager' | 'md' | 'admin' | null;
+export type UserRole = 'supervisor' | 'factory_head' | 'executive_director' | 'md' | 'admin' | null;
 
 export interface User {
     id?: string;
