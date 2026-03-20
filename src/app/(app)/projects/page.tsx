@@ -1,11 +1,12 @@
 "use client";
 
-import { createProject, deleteProject, getProjects, updateProject } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { Building2, Calendar, CheckCircle2, ClipboardList, MapPin, Plus, Trash2, TrendingUp } from 'lucide-react';
+import { Building2, Calendar, CheckCircle2, ClipboardList, MapPin, Plus, Trash2, TrendingUp, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface Project {
@@ -18,8 +19,9 @@ interface Project {
     startDate?: string | null;
     endDate?: string | null;
     progressPct: number;
-    createdAt: Date;
-    _count: { tasks: number; snags: number };
+    createdAt?: any;
+    taskCount?: number;
+    snagCount?: number;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -37,15 +39,34 @@ export default function ProjectsPage() {
     const [form, setForm] = useState({ name: '', client: '', location: '', description: '', startDate: '', endDate: '', status: 'active' });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [isOnline, setIsOnline] = useState(true);
 
-    useEffect(() => { loadProjects(); }, []);
+    useEffect(() => {
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
 
-    async function loadProjects() {
-        setLoading(true);
-        const res = await getProjects();
-        if (res.success && res.projects) setProjects(res.projects as Project[]);
-        setLoading(false);
-    }
+        const q = query(collection(db, 'projects'), orderBy('name', 'asc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const projectsData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Project[];
+            setProjects(projectsData);
+            setLoading(false);
+        }, (err) => {
+            console.error(err);
+            setError('Failed to load projects sync.');
+            setLoading(false);
+        });
+
+        return () => {
+            unsubscribe();
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
+    }, []);
 
     function openNew() {
         setEditingProject(null);
@@ -73,25 +94,37 @@ export default function ProjectsPage() {
         if (!form.name.trim() || !form.location.trim()) { setError('Project name and location are required.'); return; }
         setSaving(true);
         setError('');
-        let res;
-        if (editingProject) {
-            res = await updateProject(editingProject.id, form);
-        } else {
-            res = await createProject(form);
-        }
-        if (res.success) {
+        
+        try {
+            if (editingProject) {
+                await updateDoc(doc(db, 'projects', editingProject.id), {
+                    ...form,
+                    updatedAt: serverTimestamp()
+                });
+            } else {
+                await addDoc(collection(db, 'projects'), {
+                    ...form,
+                    progressPct: 0,
+                    taskCount: 0,
+                    snagCount: 0,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+            }
             setIsSheetOpen(false);
-            loadProjects();
-        } else {
-            setError(res.error || 'Failed to save');
+        } catch (err: any) {
+            setError(err.message || 'Failed to save');
         }
         setSaving(false);
     }
 
     async function handleDelete(id: string) {
-        if (!confirm('Are you sure? This will also delete all tasks, snags, and documents in this project.')) return;
-        await deleteProject(id);
-        loadProjects();
+        if (!confirm('Are you sure? This will delete the project metadata. Tasks/Snags should be cleaned up separately.')) return;
+        try {
+            await deleteDoc(doc(db, 'projects', id));
+        } catch (err: any) {
+            alert('Failed to delete: ' + err.message);
+        }
     }
 
     if (loading) return (
@@ -104,7 +137,18 @@ export default function ProjectsPage() {
         <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-text-main">Projects</h1>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-text-main">Projects</h1>
+                        {isOnline ? (
+                            <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                <Cloud size={10} /> Online
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                                <CloudOff size={10} /> Offline Mode
+                            </div>
+                        )}
+                    </div>
                     <p className="text-text-muted text-sm mt-0.5">Manage all Ace Facades site projects.</p>
                 </div>
                 <Button onClick={openNew} className="flex items-center gap-2">
@@ -160,8 +204,8 @@ export default function ProjectsPage() {
                             </div>
 
                             <div className="flex gap-4 text-xs text-text-muted border-t border-border/50 pt-3 mt-2">
-                                <span className="flex items-center gap-1"><ClipboardList size={12} /> {project._count.tasks} tasks</span>
-                                <span className="flex items-center gap-1"><CheckCircle2 size={12} /> {project._count.snags} open snags</span>
+                                <span className="flex items-center gap-1"><ClipboardList size={12} /> {project.taskCount || 0} tasks</span>
+                                <span className="flex items-center gap-1"><CheckCircle2 size={12} /> {project.snagCount || 0} open snags</span>
                                 {project.startDate && <span className="flex items-center gap-1 ml-auto"><Calendar size={12} /> {project.startDate}</span>}
                             </div>
                         </Card>

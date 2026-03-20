@@ -1,20 +1,14 @@
 "use client";
 
-import {
-    createMaterial,
-    deleteMaterial,
-    getMaterialById,
-    getMaterials,
-    getRecentMaterialUpdates, updateMaterialStatus
-} from '@/actions/materials';
-import { getActiveProjects } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, setDoc, updateDoc, doc, getDoc, deleteDoc, Timestamp, getDocs, limit } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import {
     AlertTriangle, ArrowRight, Box, CheckCircle2,
-    Expand, Package, Plus, ScanLine, Tag, Trash2
+    Expand, Package, Plus, ScanLine, Tag, Trash2, Cloud, CloudOff
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -27,6 +21,7 @@ interface Material {
     status: string;
     supplier?: string | null;
     quantity?: string | null;
+    updatedAt?: any;
 }
 interface Project { id: string; name: string; }
 
@@ -46,7 +41,7 @@ const MATERIAL_TYPES = [
 export default function MaterialScannerPage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [selectedProject, setSelectedProject] = useState('');
-    const [activeTab, setActiveTab] = useState<'scan' | 'register' | 'inventory'>('scan');
+    const [activeTab, setActiveTab] = useState<'scan' | 'inventory'>('scan');
     const [isScanning, setIsScanning] = useState(false);
     const [manualId, setManualId] = useState('');
     const [scannedItem, setScannedItem] = useState<Material | null>(null);
@@ -54,7 +49,8 @@ export default function MaterialScannerPage() {
     const [errorMsg, setErrorMsg] = useState('');
     const [recentItems, setRecentItems] = useState<Material[]>([]);
     const [allMaterials, setAllMaterials] = useState<Material[]>([]);
-    const [recentLoading, setRecentLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [isOnline, setIsOnline] = useState(true);
 
     // Register form
     const [isRegSheetOpen, setIsRegSheetOpen] = useState(false);
@@ -63,29 +59,44 @@ export default function MaterialScannerPage() {
     const [regError, setRegError] = useState('');
 
     useEffect(() => {
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+
         async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
-            }
+            const snap = await getDocs(query(collection(db, 'projects'), where('status', '==', 'active')));
+            const ps = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+            if (ps.length > 0) {
+                setProjects(ps);
+                setSelectedProject(ps[0].id);
+            } else { setLoading(false); }
         }
         init();
+        return () => {
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
     }, []);
 
-    useEffect(() => { if (selectedProject) { loadRecent(); loadAll(); } }, [selectedProject]);
+    useEffect(() => { 
+        if (!selectedProject) return;
+        setLoading(true);
+        // Inventory listener
+        const qAll = query(collection(db, 'materials'), where('projectId', '==', selectedProject), orderBy('createdAt', 'desc'));
+        const unsubAll = onSnapshot(qAll, (snap) => {
+            setAllMaterials(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Material[]);
+            setLoading(false);
+        });
 
-    async function loadRecent() {
-        setRecentLoading(true);
-        const res = await getRecentMaterialUpdates(selectedProject);
-        if (res.success && res.materials) setRecentItems(res.materials as Material[]);
-        setRecentLoading(false);
-    }
+        // Recent listener
+        const qRecent = query(collection(db, 'materials'), where('projectId', '==', selectedProject), orderBy('updatedAt', 'desc'), limit(10));
+        const unsubRecent = onSnapshot(qRecent, (snap) => {
+            setRecentItems(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Material[]);
+        });
 
-    async function loadAll() {
-        const res = await getMaterials(selectedProject);
-        if (res.success && res.materials) setAllMaterials(res.materials as Material[]);
-    }
+        return () => { unsubAll(); unsubRecent(); };
+    }, [selectedProject]);
 
     const handleLookup = async (id: string) => {
         if (!id.trim()) return;
@@ -93,68 +104,73 @@ export default function MaterialScannerPage() {
         setScannedItem(null);
         setScanActionStatus('idle');
         setErrorMsg('');
-        const res = await getMaterialById(id.trim().toUpperCase());
-        setIsScanning(false);
-        if (res.success && res.material) {
-            setScannedItem(res.material as Material);
-        } else {
-            setErrorMsg(res.error || 'Not found');
+        
+        try {
+            const docRef = doc(db, 'materials', id.trim().toUpperCase());
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                setScannedItem({ id: docSnap.id, ...docSnap.data() } as Material);
+            } else {
+                setErrorMsg('Material not found in database. Please register it first.');
+                setScanActionStatus('error');
+            }
+        } catch (e) {
+            setErrorMsg('Lookup failed');
             setScanActionStatus('error');
         }
+        setIsScanning(false);
     };
 
     const handleReceive = async () => {
         if (!scannedItem) return;
-        const res = await updateMaterialStatus(scannedItem.id, 'Delivered');
-        if (res.success) {
+        try {
+            await updateDoc(doc(db, 'materials', scannedItem.id), { status: 'Delivered', updatedAt: Timestamp.now() });
             setScannedItem({ ...scannedItem, status: 'Delivered' });
             setScanActionStatus('success');
-            loadRecent(); loadAll();
-        }
+        } catch (e) { setErrorMsg('Update failed'); }
     };
 
     const handleReportIssue = async () => {
         if (!scannedItem) return;
-        const res = await updateMaterialStatus(scannedItem.id, 'Issue Reported');
-        if (res.success) {
+        try {
+            await updateDoc(doc(db, 'materials', scannedItem.id), { status: 'Issue Reported', updatedAt: Timestamp.now() });
             setScannedItem({ ...scannedItem, status: 'Issue Reported' });
             setScanActionStatus('damaged');
-            loadRecent(); loadAll();
-        }
+        } catch (e) { setErrorMsg('Update failed'); }
     };
 
     const handleRegisterMaterial = async () => {
-        if (!regForm.description.trim()) { setRegError('Description is required.'); return; }
+        if (!regForm.description.trim() || !selectedProject) { setRegError('Description is required.'); return; }
         setRegSaving(true);
         setRegError('');
-        const res = await createMaterial({
-            projectId: selectedProject,
-            type: regForm.type,
-            description: regForm.description,
-            dimensions: regForm.dimensions || 'N/A',
-            destination: regForm.destination || 'Site',
-            supplier: regForm.supplier || undefined,
-            quantity: regForm.quantity || undefined,
-        });
-        if (res.success && res.material) {
+        try {
+            const typeCode = regForm.type.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3);
+            const timestamp = Date.now().toString().slice(-5);
+            const id = `ACE-${typeCode}-${timestamp}`;
+
+            const materialData = {
+                ...regForm,
+                projectId: selectedProject,
+                status: 'In Transit',
+                createdAt: Timestamp.now(),
+                updatedAt: Timestamp.now()
+            };
+
+            await setDoc(doc(db, 'materials', id), materialData);
             setIsRegSheetOpen(false);
             setRegForm({ type: 'Glass Panel', description: '', dimensions: '', destination: '', supplier: '', quantity: '' });
-            loadRecent(); loadAll();
-            // Set the newly registered material as scanned
-            setScannedItem(res.material as Material);
+            setScannedItem({ id, ...materialData } as any);
             setScanActionStatus('idle');
             setActiveTab('scan');
-        } else {
-            setRegError(res.error || 'Failed to register');
-        }
+        } catch (e) { setRegError('Failed to register'); }
         setRegSaving(false);
     };
 
     const handleDeleteMaterial = async (id: string) => {
         if (!confirm(`Delete material ${id}?`)) return;
-        await deleteMaterial(id);
-        loadAll(); loadRecent();
-        if (scannedItem?.id === id) setScannedItem(null);
+        try {
+            await deleteDoc(doc(db, 'materials', id));
+        } catch (e) { console.error(e); }
     };
 
     const fmt = (d: Date | string) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
@@ -175,7 +191,18 @@ export default function MaterialScannerPage() {
         <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5 animate-in fade-in duration-500 pb-24">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-text-main">Material Scanner</h1>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-text-main">Material Scanner</h1>
+                        {isOnline ? (
+                            <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                <Cloud size={10} /> Online
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                                <CloudOff size={10} /> Offline mode
+                            </div>
+                        )}
+                    </div>
                     <p className="text-text-muted text-sm mt-0.5">Scan, register and track material deliveries.</p>
                 </div>
                 <Button onClick={() => setIsRegSheetOpen(true)} className="flex items-center gap-2" disabled={!selectedProject}>
@@ -194,7 +221,7 @@ export default function MaterialScannerPage() {
             <div className="flex bg-surface-muted rounded-xl p-1 gap-1">
                 {(['scan', 'inventory'] as const).map(tab => (
                     <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-sm font-bold rounded-lg capitalize transition-all ${activeTab === tab ? 'bg-surface text-text-main shadow-sm' : 'text-text-muted'}`}>
-                        {tab === 'scan' ? '🔍 Scan / Lookup' : `📦 Inventory (${allMaterials.length})`}
+                        {tab === 'scan' ? 'Scan / Lookup' : `Inventory (${allMaterials.length})`}
                     </button>
                 ))}
             </div>
@@ -261,7 +288,7 @@ export default function MaterialScannerPage() {
                                             Report Issue
                                         </button>
                                         <button onClick={handleReceive} className="flex-1 py-2.5 text-sm font-bold rounded-xl border-2 border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors">
-                                            ✓ Confirm Delivery
+                                            Confirm Delivery
                                         </button>
                                     </div>
                                 )}
@@ -341,8 +368,8 @@ export default function MaterialScannerPage() {
                                     </div>
                                     {(m.supplier || m.quantity) && (
                                         <div className="flex gap-3 mt-1.5 text-xs text-text-muted">
-                                            {m.supplier && <span>📦 {m.supplier}</span>}
-                                            {m.quantity && <span>× {m.quantity}</span>}
+                                            {m.supplier && <span>Supplier: {m.supplier}</span>}
+                                            {m.quantity && <span>Qty: {m.quantity}</span>}
                                         </div>
                                     )}
                                 </div>

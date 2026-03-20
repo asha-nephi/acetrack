@@ -41,3 +41,27 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+database-debug.log*
+.firebaserc
+
+# Firebase service account keys (NEVER commit these)
+*service-account*.json
+*serviceAccount*.json
+
+# Prisma generated
+prisma/generated/
+
+# PWA / next-pwa
+/public/workbox-*.js
+/public/sw.js
+/public/sw.js.map
+/public/worker-*.js
+
+# OS
+Thumbs.db

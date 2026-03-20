@@ -1,12 +1,12 @@
 "use client";
 
-import { getAttendanceByDate, signIn, signOut } from '@/actions/attendance';
-import { getActiveProjects } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, addDoc, updateDoc, doc, Timestamp, getDocs } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { CalendarDays, ChevronLeft, ChevronRight, Download, HardHat, LogIn, LogOut, UserCheck } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Download, HardHat, LogIn, LogOut, UserCheck, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface AttendanceRecord {
@@ -14,14 +14,19 @@ interface AttendanceRecord {
     workerName: string;
     company: string;
     role: string;
-    timeIn: Date;
-    timeOut?: Date | null;
-    date: Date;
+    timeIn: any;
+    timeOut?: any | null;
+    date: string;
+    projectId: string;
 }
 
 interface Project { id: string; name: string; }
 
-const FMT_TIME = (d: Date | string) => new Date(d).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
+const FMT_TIME = (d: any) => {
+    if (!d) return '--:--';
+    const date = d.seconds ? new Date(d.seconds * 1000) : new Date(d);
+    return date.toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
+};
 const FMT_DATE_DISPLAY = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 export default function AttendancePage() {
@@ -35,41 +40,73 @@ export default function AttendancePage() {
     const [signOutSheet, setSignOutSheet] = useState<AttendanceRecord | null>(null);
     const [form, setForm] = useState({ workerName: '', company: '', role: '' });
     const [saving, setSaving] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
 
     useEffect(() => {
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+
         async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
+            const snap = await getDocs(query(collection(db, 'projects'), where('status', '==', 'active')));
+            const ps = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+            if (ps.length > 0) {
+                setProjects(ps);
+                setSelectedProject(ps[0].id);
             } else { setLoading(false); }
         }
         init();
+        return () => {
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
     }, []);
 
-    useEffect(() => { if (selectedProject) load(); }, [selectedProject, selectedDate]);
-
-    async function load() {
+    useEffect(() => { 
+        if (!selectedProject) return;
         setLoading(true);
-        const res = await getAttendanceByDate(selectedProject, selectedDate);
-        if (res.success && res.logs) setLogs(res.logs as unknown as AttendanceRecord[]);
-        setLoading(false);
-    }
+        const q = query(
+            collection(db, 'attendance_logs'), 
+            where('projectId', '==', selectedProject),
+            where('date', '==', selectedDate),
+            orderBy('timeIn', 'asc')
+        );
+        
+        const unsub = onSnapshot(q, (snap) => {
+            setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })) as AttendanceRecord[]);
+            setLoading(false);
+        });
+        return () => unsub();
+    }, [selectedProject, selectedDate]);
 
     async function handleSignIn() {
-        if (!form.workerName.trim()) return;
+        if (!form.workerName.trim() || !selectedProject) return;
         setSaving(true);
-        await signIn({ ...form, projectId: selectedProject });
-        setIsSheetOpen(false);
-        setForm({ workerName: '', company: '', role: '' });
-        load();
+        try {
+            await addDoc(collection(db, 'attendance_logs'), {
+                ...form,
+                projectId: selectedProject,
+                date: selectedDate,
+                timeIn: Timestamp.now(),
+                createdAt: Timestamp.now()
+            });
+            setIsSheetOpen(false);
+            setForm({ workerName: '', company: '', role: '' });
+        } catch (e) { console.error(e); }
         setSaving(false);
     }
 
     async function handleSignOut(logId: string) {
-        await signOut(logId);
-        setSignOutSheet(null);
-        load();
+        setSaving(true);
+        try {
+            await updateDoc(doc(db, 'attendance_logs', logId), {
+                timeOut: Timestamp.now(),
+                updatedAt: Timestamp.now()
+            });
+            setSignOutSheet(null);
+        } catch (e) { console.error(e); }
+        setSaving(false);
     }
 
     const changeDate = (delta: number) => {
@@ -98,11 +135,22 @@ export default function AttendancePage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-text-main">Attendance</h1>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-text-main">Attendance</h1>
+                        {isOnline ? (
+                            <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                <Cloud size={10} /> Online
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                                <CloudOff size={10} /> Offline mode
+                            </div>
+                        )}
+                    </div>
                     <p className="text-text-muted text-sm mt-0.5">{isToday ? "Today's" : 'Historical'} site log</p>
                 </div>
                 <div className="flex gap-2">
-                    {total > 0 && (
+                    {logs.length > 0 && (
                         <button onClick={exportCSV} className="flex items-center gap-1.5 border border-border text-text-muted hover:text-text-main hover:border-primary-300 font-bold px-3 py-2 rounded-xl text-xs transition-colors">
                             <Download size={14} /> CSV
                         </button>
@@ -213,7 +261,7 @@ export default function AttendancePage() {
                     <Input label="Worker Name *" placeholder="e.g. Emeka Johnson" value={form.workerName} onChange={e => setForm(f => ({ ...f, workerName: e.target.value }))} autoFocus />
                     <Input label="Role / Trade" placeholder="e.g. Glazier, Scaffolder" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} />
                     <Input label="Company / Subcontractor" placeholder="e.g. BrightGlass Ltd" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} />
-                    <Button fullWidth onClick={handleSignIn} disabled={saving || !form.workerName.trim()}>{saving ? 'Signing in...' : '✓ Sign In Now'}</Button>
+                    <Button fullWidth onClick={handleSignIn} disabled={saving || !form.workerName.trim()}>{saving ? 'Signing in...' : 'Sign In Now'}</Button>
                 </div>
             </BottomSheet>
 

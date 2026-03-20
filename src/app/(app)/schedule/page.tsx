@@ -1,11 +1,12 @@
 "use client";
 
-import { getActiveProjects } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, addDoc, deleteDoc, doc, Timestamp, getDocs } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { ChevronLeft, ChevronRight, Clock, HardHat, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, HardHat, Plus, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface Shift {
@@ -44,47 +45,66 @@ export default function SchedulePage() {
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [selectedDate, setSelectedDate] = useState('');
     const [form, setForm] = useState({ workerName: '', role: '', startTime: '07:00', endTime: '17:00', notes: '' });
+    const [loading, setLoading] = useState(true);
+    const [isOnline, setIsOnline] = useState(true);
 
     const weekDates = getWeekDates(weekOffset);
 
     useEffect(() => {
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+
         async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
-            }
-            // Load shifts from localStorage for now (no schema change needed)
-            const stored = localStorage.getItem('ace_shifts');
-            if (stored) setShifts(JSON.parse(stored));
+            const snap = await getDocs(query(collection(db, 'projects'), where('status', '==', 'active')));
+            const ps = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+            if (ps.length > 0) {
+                setProjects(ps);
+                setSelectedProject(ps[0].id);
+            } else { setLoading(false); }
         }
         init();
+        return () => {
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
     }, []);
 
-    function saveShifts(newShifts: Shift[]) {
-        setShifts(newShifts);
-        localStorage.setItem('ace_shifts', JSON.stringify(newShifts));
-    }
+    useEffect(() => {
+        if (!selectedProject) return;
+        setLoading(true);
+        const q = query(collection(db, 'shifts'), where('projectId', '==', selectedProject));
+        const unsubscribe = onSnapshot(q, (snap) => {
+            setShifts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Shift[]);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, [selectedProject]);
 
-    function handleAddShift() {
+    async function handleAddShift() {
         if (!form.workerName.trim() || !selectedDate || !selectedProject) return;
-        const newShift: Shift = {
-            id: Date.now().toString(),
-            date: selectedDate,
-            workerName: form.workerName,
-            role: form.role,
-            startTime: form.startTime,
-            endTime: form.endTime,
-            projectId: selectedProject,
-            notes: form.notes,
-        };
-        saveShifts([...shifts, newShift]);
-        setIsSheetOpen(false);
-        setForm({ workerName: '', role: '', startTime: '07:00', endTime: '17:00', notes: '' });
+        try {
+            await addDoc(collection(db, 'shifts'), {
+                date: selectedDate,
+                workerName: form.workerName,
+                role: form.role,
+                startTime: form.startTime,
+                endTime: form.endTime,
+                projectId: selectedProject,
+                notes: form.notes,
+                createdAt: Timestamp.now()
+            });
+            setIsSheetOpen(false);
+            setForm({ workerName: '', role: '', startTime: '07:00', endTime: '17:00', notes: '' });
+        } catch (e) { console.error(e); }
     }
 
-    function handleDeleteShift(id: string) {
-        saveShifts(shifts.filter(s => s.id !== id));
+    async function handleDeleteShift(id: string) {
+        if (!confirm('Delete this shift?')) return;
+        try {
+            await deleteDoc(doc(db, 'shifts', id));
+        } catch (e) { console.error(e); }
     }
 
     const projectShifts = shifts.filter(s => s.projectId === selectedProject);
@@ -99,9 +119,22 @@ export default function SchedulePage() {
 
     return (
         <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5 animate-in fade-in duration-500 pb-24">
-            <div>
-                <h1 className="text-2xl font-bold text-text-main">Shift Planner</h1>
-                <p className="text-text-muted text-sm mt-0.5">Plan and track worker shifts for the week.</p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-text-main">Shift Planner</h1>
+                        {isOnline ? (
+                            <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                <Cloud size={10} /> Online
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                                <CloudOff size={10} /> Offline mode
+                            </div>
+                        )}
+                    </div>
+                    <p className="text-text-muted text-sm mt-0.5">Plan and track worker shifts for the week.</p>
+                </div>
             </div>
 
             {/* Project selector */}

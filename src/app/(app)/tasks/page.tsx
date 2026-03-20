@@ -1,12 +1,12 @@
 "use client";
 
-import { getActiveProjects } from '@/actions/projects';
-import { deleteTask, getTasks, saveTask } from '@/actions/tasks';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, addDoc, serverTimestamp, updateDoc, doc, deleteDoc, getDocs } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
-import { Clock, Kanban, Plus, Trash2 } from 'lucide-react';
+import { Clock, Kanban, Plus, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 type TaskStatus = 'todo' | 'doing' | 'blocked' | 'done';
@@ -20,6 +20,8 @@ interface KanbanTask {
     dueDate: string;
     priority: 'high' | 'medium' | 'low';
     comments?: string;
+    projectId: string;
+    createdAt?: any;
 }
 
 interface Project { id: string; name: string; }
@@ -46,28 +48,58 @@ export default function KanbanBoardPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [isOnline, setIsOnline] = useState(true);
 
     useEffect(() => {
-        async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
-            } else {
-                setLoading(false);
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+
+        // Load active projects
+        const q = query(collection(db, 'projects'), where('status', '==', 'active'), orderBy('name', 'asc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const projectsData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Project[];
+            setProjects(projectsData);
+            if (projectsData.length > 0 && !selectedProject) {
+                setSelectedProject(projectsData[0].id);
             }
-        }
-        init();
+            if (projectsData.length === 0) setLoading(false);
+        });
+
+        return () => {
+            unsubscribe();
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
     }, []);
 
-    useEffect(() => { if (selectedProject) loadTasks(); }, [selectedProject]);
-
-    async function loadTasks() {
+    useEffect(() => {
+        if (!selectedProject) return;
         setLoading(true);
-        const res = await getTasks(selectedProject);
-        if (res.success && res.tasks) setTasks(res.tasks as KanbanTask[]);
-        setLoading(false);
-    }
+        const q = query(
+            collection(db, 'tasks'), 
+            where('projectId', '==', selectedProject),
+            orderBy('createdAt', 'desc')
+        );
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const tasksData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as KanbanTask[];
+            setTasks(tasksData);
+            setLoading(false);
+        }, (err) => {
+            console.error(err);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [selectedProject]);
 
     const handleTaskClick = (task: KanbanTask) => {
         setActiveTask({ ...task });
@@ -77,34 +109,53 @@ export default function KanbanBoardPage() {
 
     const handleMoveTask = async (newStatus: TaskStatus) => {
         if (!activeTask) return;
-        const updated = { ...activeTask, status: newStatus };
-        setTasks(prev => prev.map(t => t.id === activeTask.id ? updated : t));
-        setActiveTask(updated);
-        await saveTask(updated, false, selectedProject);
+        try {
+            const taskRef = doc(db, 'tasks', activeTask.id);
+            await updateDoc(taskRef, { 
+                status: newStatus,
+                updatedAt: serverTimestamp()
+            });
+            setActiveTask({ ...activeTask, status: newStatus });
+        } catch (err) {
+            console.error('Error moving task:', err);
+        }
     };
 
     const handleSaveTask = async () => {
         if (!activeTask?.title?.trim() || !selectedProject) return;
         setSaving(true);
-        const isNew = activeTask.id.startsWith('new_');
-        const tempId = activeTask.id;
-        if (tasks.find(t => t.id === tempId)) {
-            setTasks(prev => prev.map(t => t.id === tempId ? activeTask : t));
-        } else {
-            setTasks(prev => [...prev, activeTask]);
-        }
-        setIsSheetOpen(false);
-        const res = await saveTask(activeTask, isNew, selectedProject);
-        if (res.success && res.task) {
-            setTasks(prev => prev.map(t => t.id === tempId ? (res.task as KanbanTask) : t));
+        
+        try {
+            const taskData = {
+                ...activeTask,
+                projectId: selectedProject,
+                updatedAt: serverTimestamp()
+            };
+
+            if (activeTask.id.startsWith('new_')) {
+                const { id, ...newData } = taskData;
+                await addDoc(collection(db, 'tasks'), {
+                    ...newData,
+                    createdAt: serverTimestamp()
+                });
+            } else {
+                await updateDoc(doc(db, 'tasks', activeTask.id), taskData);
+            }
+            setIsSheetOpen(false);
+        } catch (err) {
+            console.error('Error saving task:', err);
         }
         setSaving(false);
     };
 
     const handleDeleteTask = async (id: string) => {
-        setTasks(prev => prev.filter(t => t.id !== id));
-        setIsSheetOpen(false);
-        if (!id.startsWith('new_')) await deleteTask(id);
+        if (!confirm('Are you sure you want to delete this task?')) return;
+        try {
+            setIsSheetOpen(false);
+            await deleteDoc(doc(db, 'tasks', id));
+        } catch (err) {
+            console.error('Error deleting task:', err);
+        }
     };
 
     const createNewTask = () => {
@@ -114,7 +165,8 @@ export default function KanbanBoardPage() {
             title: '', description: '',
             status: 'todo', assignee: '',
             dueDate: new Date().toISOString().split('T')[0],
-            priority: 'medium', comments: ''
+            priority: 'medium', comments: '',
+            projectId: selectedProject
         };
         setActiveTask(newTask);
         setIsEditing(true);
@@ -127,7 +179,18 @@ export default function KanbanBoardPage() {
             <div className="p-4 md:p-6 shrink-0 bg-surface border-b border-border z-10 space-y-3">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-text-main">Task Board</h1>
+                        <div className="flex items-center gap-2">
+                            <h1 className="text-2xl font-bold text-text-main">Task Board</h1>
+                            {isOnline ? (
+                                <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                    <Cloud size={10} /> Live Sync
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                                    <CloudOff size={10} /> Offline mode
+                                </div>
+                            )}
+                        </div>
                         <p className="text-sm text-text-muted">Manage daily operations across all trades.</p>
                     </div>
                     <button onClick={createNewTask} disabled={!selectedProject} className="flex items-center gap-1.5 bg-primary-600 text-white font-bold px-4 py-2.5 rounded-xl shadow-lg shadow-primary-600/20 hover:bg-primary-700 transition-all active:scale-95 disabled:opacity-50 text-sm">
@@ -255,7 +318,7 @@ export default function KanbanBoardPage() {
                                     {Columns.map(col => (
                                         <button key={col.id} disabled={activeTask.status === col.id} onClick={() => handleMoveTask(col.id)} className={`py-2.5 px-3 rounded-xl text-sm font-bold border transition-all flex items-center gap-2 ${activeTask.status === col.id ? 'bg-primary-50 border-primary-600 text-primary-700' : 'bg-surface border-border text-text-muted hover:bg-surface-muted'}`}>
                                             <div className={`w-2 h-2 rounded-full ${col.dot}`} /> {col.label}
-                                            {activeTask.status === col.id && <span className="ml-auto text-[10px]">✓</span>}
+                                            {activeTask.status === col.id && <span className="ml-auto text-[10px] font-bold">Active</span>}
                                         </button>
                                     ))}
                                 </div>

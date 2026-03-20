@@ -1,3 +1,4 @@
+import { NextConfig } from 'next';
 import withPWAInit from 'next-pwa';
 
 const withPWA = withPWAInit({
@@ -8,7 +9,8 @@ const withPWA = withPWAInit({
 });
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {
+const nextConfig: NextConfig = {
+  devIndicators: false,
   // Silence turbopack/webpack warnings from next-pwa
   turbopack: {}
 };

@@ -2,6 +2,8 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { db } from '@/lib/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 // Define the shape of our User and Settings
 export type UserRole = 'site_manager' | 'factory_manager' | 'md' | 'admin' | null;
@@ -46,15 +48,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (storedSettings) setSettings(JSON.parse(storedSettings));
     }, []);
 
-    // Sync user with NextAuth session
+    // Sync user with NextAuth session AND Firestore for real-time RBAC
     useEffect(() => {
-        if (session && session.user) {
+        if (session && session.user?.email) {
+            // Initial set from session
             setUser({
                 id: (session.user as any).id as string,
                 name: session.user.name || '',
                 role: (session.user as any).role as UserRole,
                 isLoggedIn: true
             });
+
+            // Real-time listener on the users collection to get updated role
+            const q = query(collection(db, 'users'), where('email', '==', session.user.email));
+            const unsubscribe = onSnapshot(q, (snap) => {
+                if (!snap.empty) {
+                    const userData = snap.docs[0].data();
+                    setUser(prev => ({
+                        ...prev,
+                        role: userData.role as UserRole
+                    }));
+                }
+            });
+
+            return () => unsubscribe();
         } else if (status === 'unauthenticated') {
             setUser(defaultUser);
         }

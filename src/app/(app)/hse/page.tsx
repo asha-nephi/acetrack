@@ -1,13 +1,13 @@
 "use client";
 
-import { createHSEEntry, deleteHSEEntry, getHSEEntries } from '@/actions/hse';
-import { getActiveProjects } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, addDoc, deleteDoc, doc, Timestamp, getDocs } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useAppContext } from '@/context/AppContext';
-import { AlertOctagon, AlertTriangle, CheckCircle2, ClipboardCheck, HardHat, Plus, Shield, Trash2 } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, CheckCircle2, ClipboardCheck, HardHat, Plus, Shield, Trash2, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 interface HSEEntry {
@@ -17,7 +17,8 @@ interface HSEEntry {
     severity?: string | null;
     actionTaken?: string | null;
     reportedBy: string;
-    date: Date;
+    date: any;
+    projectId: string;
 }
 interface Project { id: string; name: string; }
 
@@ -51,62 +52,92 @@ export default function HSEPage() {
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
+    const [isOnline, setIsOnline] = useState(true);
     const [form, setForm] = useState({ type: 'Toolbox Talk', description: '', severity: '' as string, actionTaken: '', reportedBy: '' });
 
     useEffect(() => {
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+
         async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
+            const snap = await getDocs(query(collection(db, 'projects'), where('status', '==', 'active')));
+            const ps = snap.docs.map(d => ({ id: d.id, name: d.data().name }));
+            if (ps.length > 0) {
+                setProjects(ps);
+                setSelectedProject(ps[PS0].id);
             } else { setLoading(false); }
         }
+        const PS0 = 0;
         init();
+        return () => {
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
     }, []);
 
-    useEffect(() => { if (selectedProject) load(); }, [selectedProject]);
-
-    async function load() {
+    useEffect(() => { 
+        if (!selectedProject) return;
         setLoading(true);
-        const res = await getHSEEntries(selectedProject);
-        if (res.success && res.entries) setEntries(res.entries as unknown as HSEEntry[]);
-        setLoading(false);
-    }
+        const q = query(collection(db, 'hse_entries'), where('projectId', '==', selectedProject), orderBy('date', 'desc'));
+        const unsub = onSnapshot(q, (snap) => {
+            setEntries(snap.docs.map(d => ({ id: d.id, ...d.data() })) as HSEEntry[]);
+            setLoading(false);
+        });
+        return () => unsub();
+    }, [selectedProject]);
 
     async function handleCreate() {
-        if (!form.description.trim()) { setError('Description is required.'); return; }
+        if (!form.description.trim() || !selectedProject) { setError('Description is required.'); return; }
         setSaving(true);
-        const res = await createHSEEntry({
-            ...form,
-            reportedBy: form.reportedBy || user.name || 'Unknown',
-            projectId: selectedProject,
-            severity: form.severity || undefined,
-        });
-        if (res.success) {
+        try {
+            await addDoc(collection(db, 'hse_entries'), {
+                ...form,
+                projectId: selectedProject,
+                reportedBy: form.reportedBy || user.name || 'Unknown',
+                date: Timestamp.now(),
+                createdAt: Timestamp.now()
+            });
             setIsSheetOpen(false);
             setForm({ type: 'Toolbox Talk', description: '', severity: '', actionTaken: '', reportedBy: '' });
-            load();
-        } else { setError(res.error || 'Failed to save'); }
+        } catch (e) { setError('Failed to save'); }
         setSaving(false);
     }
 
     async function handleDelete(id: string) {
         if (!confirm('Remove this HSE entry?')) return;
-        await deleteHSEEntry(id);
-        load();
+        try {
+            await deleteDoc(doc(db, 'hse_entries', id));
+        } catch (e) { console.error(e); }
     }
 
     const incidents = entries.filter(e => e.type === 'Incident').length;
     const nearMisses = entries.filter(e => e.type === 'Near Miss').length;
     const talks = entries.filter(e => e.type === 'Toolbox Talk').length;
 
-    const fmt = (d: Date | string) => new Date(d).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+    const fmt = (d: any) => {
+        if (!d) return '--';
+        const date = d.seconds ? new Date(d.seconds * 1000) : new Date(d);
+        return date.toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+    };
 
     return (
         <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-5 animate-in fade-in duration-500 pb-24">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-text-main">HSE Log</h1>
+                    <div className="flex items-center gap-2">
+                        <h1 className="text-2xl font-bold text-text-main">HSE Log</h1>
+                        {isOnline ? (
+                            <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                <Cloud size={10} /> Online
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                                <CloudOff size={10} /> Offline mode
+                            </div>
+                        )}
+                    </div>
                     <p className="text-text-muted text-sm mt-0.5">Health, Safety & Environment records.</p>
                 </div>
                 <Button onClick={() => { setError(''); setIsSheetOpen(true); }} className="flex items-center gap-2" disabled={!selectedProject}>
@@ -161,7 +192,7 @@ export default function HSEPage() {
                                         )}
                                     </div>
                                     <p className="text-sm font-medium text-text-main leading-snug">{entry.description}</p>
-                                    {entry.actionTaken && <p className="text-xs text-emerald-700 mt-1 font-medium">✓ {entry.actionTaken}</p>}
+                                    {entry.actionTaken && <p className="text-xs text-emerald-700 mt-1 font-medium">Action: {entry.actionTaken}</p>}
                                     <p className="text-xs text-text-muted mt-1">{entry.reportedBy} · {fmt(entry.date)}</p>
                                 </div>
                                 <button onClick={() => handleDelete(entry.id)} className="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 shrink-0">

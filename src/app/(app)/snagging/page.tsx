@@ -1,11 +1,11 @@
 "use client";
 
-import { getActiveProjects } from '@/actions/projects';
-import { deleteSnag, getSnags, saveSnag } from '@/actions/snags';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where, orderBy, addDoc, serverTimestamp, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { AlertTriangle, CheckCircle2, Filter, MapPin, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Filter, MapPin, X, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 type Severity = 'minor' | 'major' | 'critical';
@@ -21,6 +21,8 @@ interface SnagPin {
     status: SnagStatus;
     assignee?: string;
     resolutionNote?: string;
+    projectId: string;
+    createdAt?: any;
 }
 
 interface Project { id: string; name: string; }
@@ -47,31 +49,58 @@ export default function SnaggingPage() {
     const [editingPinId, setEditingPinId] = useState<string | null>(null);
     const [filter, setFilter] = useState<'all' | 'open' | 'in_progress' | 'resolved'>('all');
     const [loading, setLoading] = useState(true);
+    const [isOnline, setIsOnline] = useState(true);
     const imageRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
-            } else {
-                setLoading(false);
+        setIsOnline(navigator.onLine);
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+
+        const q = query(collection(db, 'projects'), where('status', '==', 'active'), orderBy('name', 'asc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const projectsData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Project[];
+            setProjects(projectsData);
+            if (projectsData.length > 0 && !selectedProject) {
+                setSelectedProject(projectsData[0].id);
             }
-        }
-        init();
+            if (projectsData.length === 0) setLoading(false);
+        });
+
+        return () => {
+            unsubscribe();
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
     }, []);
 
     useEffect(() => {
-        if (selectedProject) loadSnags();
-    }, [selectedProject]);
-
-    async function loadSnags() {
+        if (!selectedProject) return;
         setLoading(true);
-        const res = await getSnags(selectedProject);
-        if (res.success && res.snags) setPins(res.snags as unknown as SnagPin[]);
-        setLoading(false);
-    }
+        const q = query(
+            collection(db, 'snags'), 
+            where('projectId', '==', selectedProject),
+            orderBy('createdAt', 'desc')
+        );
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const snagsData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as SnagPin[];
+            setPins(snagsData);
+            setLoading(false);
+        }, (err) => {
+            console.error(err);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [selectedProject]);
 
     const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!imageRef.current || !selectedProject) return;
@@ -86,7 +115,8 @@ export default function SnaggingPage() {
             x: xPos, y: yPos,
             title: '', description: '',
             severity: 'minor', status: 'open',
-            assignee: '', resolutionNote: ''
+            assignee: '', resolutionNote: '',
+            projectId: selectedProject
         };
         setPins(prev => [...prev, newPin]);
         setActivePin(newPin);
@@ -103,25 +133,45 @@ export default function SnaggingPage() {
     const savePin = async () => {
         if (!activePin || !activePin.title.trim()) return;
         const isNew = activePin.id.startsWith('new_');
-        const tempId = activePin.id;
+        
+        try {
+            const pinData = {
+                ...activePin,
+                projectId: selectedProject,
+                updatedAt: serverTimestamp()
+            };
 
-        setPins(prev => prev.map(p => p.id === tempId ? activePin : p));
-        setIsSheetOpen(false);
-        setActivePin(null);
-        setEditingPinId(null);
-
-        const res = await saveSnag(activePin, isNew, selectedProject);
-        if (res.success && res.snag) {
-            setPins(prev => prev.map(p => p.id === tempId ? (res.snag as unknown as SnagPin) : p));
+            if (isNew) {
+                const { id, ...newData } = pinData;
+                await addDoc(collection(db, 'snags'), {
+                    ...newData,
+                    createdAt: serverTimestamp()
+                });
+            } else {
+                await updateDoc(doc(db, 'snags', activePin.id), pinData);
+            }
+            setIsSheetOpen(false);
+            setActivePin(null);
+            setEditingPinId(null);
+        } catch (err) {
+            console.error('Error saving snag:', err);
         }
     };
 
     const handleDeletePin = async (id: string) => {
-        setPins(prev => prev.filter(p => p.id !== id));
-        setIsSheetOpen(false);
-        setActivePin(null);
-        setEditingPinId(null);
-        if (!id.startsWith('new_')) await deleteSnag(id);
+        if (!confirm('Delete this snag pin?')) return;
+        try {
+            setIsSheetOpen(false);
+            setActivePin(null);
+            setEditingPinId(null);
+            if (!id.startsWith('new_')) {
+                await deleteDoc(doc(db, 'snags', id));
+            } else {
+                setPins(prev => prev.filter(p => p.id !== id));
+            }
+        } catch (err) {
+            console.error('Error deleting snag:', err);
+        }
     };
 
     const pinColor = (pin: SnagPin) => pin.status === 'resolved' ? SEV_COLOR.resolved : (SEV_COLOR[pin.severity] || 'bg-gray-400 text-white border-gray-600');
@@ -142,7 +192,18 @@ export default function SnaggingPage() {
         <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5 animate-in fade-in duration-500 pb-28">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-text-main">QA Snagging</h1>
+                <div className="flex items-center gap-2">
+                    <h1 className="text-2xl font-bold text-text-main">QA Snagging</h1>
+                    {isOnline ? (
+                        <div className="flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                            <Cloud size={10} /> Powered by Firebase
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1 text-[10px] bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider animate-pulse">
+                            <CloudOff size={10} /> Local Cache (Offline)
+                        </div>
+                    )}
+                </div>
                 <p className="text-text-muted text-sm mt-0.5">Tap on the blueprint to log a defect pin.</p>
             </div>
 

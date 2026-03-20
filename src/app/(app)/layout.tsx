@@ -6,7 +6,7 @@ import {
     Bell, Building2, Calendar, FileText,
     Folder,
     HardHat, Home,
-    Kanban, LogOut, MapPin, ScanBarcode, Settings,
+    Kanban, LogOut, MapPin, Plus, ScanBarcode, Search, Settings,
     Shield,
     User as UserIcon,
     Users,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { ReactNode, useEffect, useRef, useState } from 'react';
 
 interface NavItem { name: string; href: string; icon: ReactNode; }
@@ -77,32 +78,49 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     const isSiteManager = user.role === 'site_manager' || isAdmin;
     const isFactory = user.role === 'factory_manager' || isAdmin;
 
-    const navItems: NavItem[] = [
-        { name: 'Dashboard', href: '/dashboard', icon: <Home size={20} /> },
-        { name: 'Projects', href: '/projects', icon: <Building2 size={20} /> },
-        ...(isSiteManager ? [
-            { name: 'QA Snagging', href: '/snagging', icon: <MapPin size={20} /> },
-            { name: 'Task Board', href: '/tasks', icon: <Kanban size={20} /> },
-            { name: 'Weekly Report', href: '/report', icon: <FileText size={20} /> },
-        ] : []),
-        ...(isFactory ? [
-            { name: 'Material Scanner', href: '/scanner', icon: <ScanBarcode size={20} /> },
-        ] : []),
-        { name: 'HSE Log', href: '/hse', icon: <Shield size={20} /> },
-        { name: 'Documents', href: '/documents', icon: <Folder size={20} /> },
-        { name: 'Attendance', href: '/attendance', icon: <HardHat size={20} /> },
-        { name: 'Shift Planner', href: '/schedule', icon: <Calendar size={20} /> },
-        { name: 'People', href: '/people', icon: <Users size={20} /> },
-        { name: 'Settings', href: '/settings', icon: <Settings size={20} /> },
+    const navSections = [
+        {
+            title: 'Operations',
+            items: [
+                { name: 'Dashboard', href: '/dashboard', icon: <Home size={18} /> },
+                { name: 'Search', href: '/search', icon: <Search size={18} /> },
+                { name: 'Daily Progress', href: '/daily-report', icon: <Plus size={18} /> },
+                ...(isSiteManager ? [
+                    { name: 'Task Board', href: '/tasks', icon: <Kanban size={18} /> },
+                    { name: 'QA Snagging', href: '/snagging', icon: <MapPin size={18} /> },
+                ] : []),
+            ]
+        },
+        {
+            title: 'Site Logs',
+            items: [
+                { name: 'Attendance', href: '/attendance', icon: <HardHat size={18} /> },
+                { name: 'HSE Log', href: '/hse', icon: <Shield size={18} /> },
+                { name: 'Shift Planner', href: '/schedule', icon: <Calendar size={18} /> },
+                ...(isFactory ? [
+                    { name: 'Material Scanner', href: '/scanner', icon: <ScanBarcode size={18} /> },
+                ] : []),
+            ]
+        },
+        {
+            title: 'Management',
+            items: [
+                { name: 'Projects', href: '/projects', icon: <Building2 size={18} /> },
+                { name: 'Weekly Report', href: '/report', icon: <FileText size={18} /> },
+                { name: 'Documents', href: '/documents', icon: <Folder size={18} /> },
+                ...(isAdmin ? [
+                    { name: 'People', href: '/people', icon: <Users size={18} /> },
+                ] : []),
+            ]
+        }
     ];
 
     // Mobile bottom nav: 5 most-used items
     const bottomNavItems = [
         { name: 'Home', href: '/dashboard', icon: <Home size={22} /> },
-        { name: 'Projects', href: '/projects', icon: <Building2 size={22} /> },
-        ...(isSiteManager ? [{ name: 'Snag', href: '/snagging', icon: <MapPin size={22} /> }] : []),
-        ...(isFactory ? [{ name: 'Scanner', href: '/scanner', icon: <ScanBarcode size={22} /> }] : []),
-        { name: 'Tasks', href: '/tasks', icon: <Kanban size={22} /> },
+        { name: 'Search', href: '/search', icon: <Search size={22} /> },
+        { name: 'Daily', href: '/daily-report', icon: <Plus size={22} /> },
+        ...(isSiteManager ? [{ name: 'Tasks', href: '/tasks', icon: <Kanban size={22} /> }] : []),
         { name: 'HSE', href: '/hse', icon: <Shield size={22} /> },
     ].slice(0, 5);
 
@@ -134,15 +152,25 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     </div>
                 </div>
 
-                <nav className="flex-1 px-3 space-y-0.5">
-                    {navItems.map((item) => {
-                        const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
-                        return (
-                            <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all font-semibold text-sm ${isActive ? 'bg-primary-50 text-primary-700' : 'text-text-muted hover:bg-surface-muted hover:text-text-main'}`}>
-                                {item.icon}{item.name}
-                            </Link>
-                        );
-                    })}
+                <nav className="flex-1 px-3 space-y-6">
+                    {navSections.map((section) => (
+                        <div key={section.title}>
+                            <h3 className="px-4 text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">{section.title}</h3>
+                            <div className="space-y-1">
+                                {section.items.map((item) => {
+                                    const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+                                    return (
+                                        <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-4 py-2 rounded-xl transition-all font-semibold text-sm ${isActive ? 'bg-primary-50 text-primary-700 shadow-sm shadow-primary-700/5' : 'text-text-muted hover:bg-surface-muted hover:text-text-main'}`}>
+                                            {item.icon}{item.name}
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                    <Link href="/settings" className={`flex items-center gap-3 px-4 py-2 rounded-xl transition-all font-semibold text-sm ${pathname === '/settings' ? 'bg-primary-50 text-primary-700' : 'text-text-muted hover:bg-surface-muted hover:text-text-main'}`}>
+                        <Settings size={18} /> Settings
+                    </Link>
                 </nav>
 
                 <div className="px-4 mt-4 border-t border-border pt-4">
@@ -232,6 +260,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     })}
                 </div>
             </nav>
+            <PWAInstallPrompt />
         </div>
     );
 }
