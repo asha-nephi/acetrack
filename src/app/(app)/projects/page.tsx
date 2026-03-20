@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Building2, Calendar, CheckCircle2, ClipboardList, MapPin, Plus, Trash2, TrendingUp, Cloud, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useAppContext } from '@/context/AppContext';
 
 interface Project {
     id: string;
@@ -32,6 +33,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function ProjectsPage() {
+    const { user: currentUser } = useAppContext();
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [isSheetOpen, setIsSheetOpen] = useState(false);
