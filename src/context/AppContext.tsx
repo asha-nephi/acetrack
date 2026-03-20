@@ -2,8 +2,9 @@
 
 import { signOut, useSession } from 'next-auth/react';
 import { createContext, ReactNode, useContext, useEffect, useState } from 'react';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { signInWithCustomToken } from 'firebase/auth';
 
 // Define the shape of our User and Settings
 export type UserRole = 'supervisor' | 'factory_head' | 'executive_director' | 'md' | 'admin' | null;
@@ -61,6 +62,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 isLoggedIn: true
             });
 
+            // Authenticate Firebase Web Client
+            const fbToken = (session.user as any).firebaseToken;
+            if (fbToken) {
+                signInWithCustomToken(auth, fbToken).catch(err => console.error("Firebase auth sync failed", err));
+            }
+
             // Real-time listener on the users collection to get updated role
             const q = query(collection(db, 'users'), where('email', '==', session.user.email));
             const unsubscribe = onSnapshot(q, (snap) => {
@@ -87,6 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     const logout = () => {
+        auth.signOut().catch(console.error);
         signOut();
     };
 
