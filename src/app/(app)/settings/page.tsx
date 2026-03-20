@@ -1,6 +1,8 @@
 "use client";
 
-import { changePassword, updateProfile } from '@/actions/people';
+import { auth, db } from '@/lib/firebase';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { doc, updateDoc } from 'firebase/firestore';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -42,8 +44,10 @@ export default function SettingsPage() {
         if (!user.id) return;
         setSavingProfile(true);
         setProfileMsg('');
-        await updateProfile(user.id, { phone: phone || undefined });
-        setProfileMsg('Profile updated.');
+        try {
+            await updateDoc(doc(db, 'users', user.id), { phone: phone || '' });
+            setProfileMsg('Profile updated.');
+        } catch (e) { console.error(e); }
         setSavingProfile(false);
     }
 
@@ -53,18 +57,22 @@ export default function SettingsPage() {
         if (!currentPwd || !newPwd || !confirmPwd) { setPwdError('All fields are required.'); return; }
         if (newPwd !== confirmPwd) { setPwdError('New passwords do not match.'); return; }
         if (newPwd.length < 8) { setPwdError('New password must be at least 8 characters.'); return; }
-        if (!user.id) return;
 
         setSavingPwd(true);
-        const res = await changePassword(user.id, currentPwd, newPwd);
-        if (res.success) {
+        try {
+            const firebaseUser = auth.currentUser;
+            if (!firebaseUser || !firebaseUser.email) { setPwdError('Not authenticated.'); setSavingPwd(false); return; }
+            const credential = EmailAuthProvider.credential(firebaseUser.email, currentPwd);
+            await reauthenticateWithCredential(firebaseUser, credential);
+            await updatePassword(firebaseUser, newPwd);
             setPwdMsg('Password changed successfully.');
             setCurrentPwd(''); setNewPwd(''); setConfirmPwd('');
-        } else {
-            setPwdError(res.error || 'Failed to change password.');
+        } catch (e: any) {
+            setPwdError(e.code === 'auth/wrong-password' ? 'Current password is incorrect.' : 'Failed to change password.');
         }
         setSavingPwd(false);
     }
+
 
     return (
         <div className="p-4 md:p-6 max-w-2xl mx-auto animate-in fade-in duration-500 pb-24 space-y-6">

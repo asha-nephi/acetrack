@@ -1,7 +1,7 @@
 "use client";
 
-import { createDocument, deleteDocument, getDocuments } from '@/actions/documents';
-import { getActiveProjects } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where, orderBy, addDoc, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -42,11 +42,14 @@ export default function DocumentsPage() {
 
     useEffect(() => {
         async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-                setSelectedProject(res.projects[0].id);
-            }
+            try {
+                const snap = await getDocs(query(collection(db, 'projects'), where('status', '!=', 'completed')));
+                const projs = snap.docs.map(d => ({ id: d.id, name: (d.data() as any).name })) as Project[];
+                if (projs.length > 0) {
+                    setProjects(projs);
+                    setSelectedProject(projs[0].id);
+                }
+            } catch (e) { console.error(e); }
             setLoading(false);
         }
         init();
@@ -56,26 +59,28 @@ export default function DocumentsPage() {
 
     async function loadDocs() {
         setLoading(true);
-        const res = await getDocuments(selectedProject);
-        if (res.success && res.documents) setDocs(res.documents as Doc[]);
+        try {
+            const snap = await getDocs(query(collection(db, 'documents'), where('projectId', '==', selectedProject), orderBy('date', 'desc')));
+            setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() } as Doc)));
+        } catch (e) { console.error(e); }
         setLoading(false);
     }
 
     async function handleCreate() {
         if (!form.title.trim()) { setError('Title is required.'); return; }
         setSaving(true);
-        const res = await createDocument({ ...form, projectId: selectedProject });
-        if (res.success) {
+        try {
+            await addDoc(collection(db, 'documents'), { ...form, projectId: selectedProject, createdAt: Timestamp.now() });
             setIsSheetOpen(false);
             setForm({ title: '', category: 'Shop Drawings', rev: '01', status: 'For Review', date: new Date().toISOString().split('T')[0], size: '', url: '' });
             loadDocs();
-        } else { setError(res.error || 'Failed'); }
+        } catch (e) { setError('Failed to save document.'); }
         setSaving(false);
     }
 
     async function handleDelete(id: string) {
         if (!confirm('Remove this document?')) return;
-        await deleteDocument(id);
+        try { await deleteDoc(doc(db, 'documents', id)); } catch (e) { console.error(e); }
         loadDocs();
     }
 

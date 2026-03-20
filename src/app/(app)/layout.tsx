@@ -1,6 +1,5 @@
 "use client";
 
-import { getNotifications, markAllRead } from '@/actions/notifications';
 import { useAppContext } from '@/context/AppContext';
 import {
     Bell, Building2, Calendar, FileText,

@@ -1,6 +1,7 @@
 "use client";
 
-import { getActiveProjects } from '@/actions/projects';
+import { db } from '@/lib/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { useAppContext } from '@/context/AppContext';
@@ -21,10 +22,11 @@ export function ProjectDetailsSection({ data, onChange }: Props) {
 
     useEffect(() => {
         async function init() {
-            const res = await getActiveProjects();
-            if (res.success && res.projects && res.projects.length > 0) {
-                setProjects(res.projects as Project[]);
-            }
+            try {
+                const q = query(collection(db, 'projects'), where('status', '!=', 'completed'));
+                const snap = await getDocs(q);
+                setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() } as Project)));
+            } catch (e) { console.error(e); }
             setLoaded(true);
         }
         init();
