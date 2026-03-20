@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to get the current user's document data safely
+    function getUserData() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc != null ? userDoc.data : null;
+    }
+    
+    // Helper function to check if the current user has a specific role
+    function hasRole(allowedRoles) {
+      let data = getUserData();
+      return data != null && data.get('role', '') in allowedRoles;
+    }
+    
+    // Helper function to check if the current user has a specific permission safely
+    function hasPermission(permission) {
+      let data = getUserData();
+      return data != null && data.get('permissions', []).hasAny([permission]);
+    }
+
+    // User Profiles Configuration
+    match /users/{userId} {
+      // Anyone logged in can read user profiles
+      allow read: if request.auth != null;
+      // Allow users to update their own profile, or admins/mds to manage users
+      allow update: if request.auth != null && (
+        request.auth.uid == userId || 
+        hasRole(['admin', 'md']) ||
+        hasPermission('manage_users')
+      );
+      // Admin/MD can delete users
+      allow delete: if request.auth != null && hasRole(['admin', 'md']);
+      // System handles creation through APIs usually, but allow it for admins
+      allow create: if request.auth != null && hasRole(['admin', 'md']);
+    }
+
+    // Projects (Crucial fix for "Insufficient Permissions")
+    match /projects/{projectId} {
+      allow read: if request.auth != null;
+      // Only admins, MDs, or users with explicit create_projects permission can create/edit projects
+      allow write: if request.auth != null && (
+        hasRole(['admin', 'md']) ||
+        hasPermission('create_projects')
+      );
+    }
+    
+    // Tasks, Snags, Materials, Notifications, etc.
+    // Allow authenticated users to manage daily logs and sub-collections.
+    match /tasks/{taskId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /snags/{snagId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /notifications/{notifId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /materials/{matId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    match /attendance/{attId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /daily_logs/{logId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    match /hse_logs/{logId} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /{document=**} {
+      allow read, write: if false; // Deny everything else by default
+    }
+  }
+}
