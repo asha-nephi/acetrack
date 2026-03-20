@@ -49,16 +49,24 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
     async function loadNotifications() {
         if (!user.id) return;
-        const res = await getNotifications(user.id);
-        if (res.success && res.notifications) {
-            setNotifications(res.notifications as unknown as Notification[]);
-            setUnreadCount(res.unreadCount || 0);
-        }
+        try {
+            const { collection, query, where, orderBy, getDocs } = await import('firebase/firestore');
+            const { db } = await import('@/lib/firebase');
+            const snap = await getDocs(query(collection(db, 'notifications'), where('userId', '==', user.id), orderBy('createdAt', 'desc')));
+            const notifs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as unknown as Notification[];
+            setNotifications(notifs);
+            setUnreadCount(notifs.filter((n: any) => !n.isRead).length);
+        } catch (e) { console.error(e); }
     }
 
     async function handleMarkAllRead() {
         if (!user.id) return;
-        await markAllRead(user.id);
+        try {
+            const { collection, query, where, getDocs, updateDoc, doc } = await import('firebase/firestore');
+            const { db } = await import('@/lib/firebase');
+            const snap = await getDocs(query(collection(db, 'notifications'), where('userId', '==', user.id), where('isRead', '==', false)));
+            await Promise.all(snap.docs.map(d => updateDoc(doc(db, 'notifications', d.id), { isRead: true })));
+        } catch (e) { console.error(e); }
         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
         setUnreadCount(0);
     }
