@@ -182,7 +182,7 @@ export default function PeoplePage() {
                         </Button>
                     )}
                     {isAdmin && (
-                        <Button size="sm" onClick={() => setIsSheetOpen(true)} className="flex items-center gap-1.5 px-3">
+                        <Button onClick={() => setIsSheetOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm">
                             <UserPlus size={14} /> <span className="hidden sm:inline">Add Member</span>
                         </Button>
                     )}
