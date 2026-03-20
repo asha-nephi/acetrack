@@ -177,7 +177,7 @@ export default function PeoplePage() {
                 </div>
                 <div className="flex items-center gap-2">
                     {(isAdmin || currentUser.permissions?.includes('broadcast_messages')) && (
-                        <Button variant="secondary" size="sm" onClick={() => setIsBroadcastOpen(true)} className="flex items-center gap-1.5 px-3">
+                        <Button variant="secondary" onClick={() => setIsBroadcastOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm">
                             <Megaphone size={14} /> <span className="hidden sm:inline">Broadcast</span>
                         </Button>
                     )}
