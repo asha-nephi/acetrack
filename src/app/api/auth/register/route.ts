@@ -1,6 +1,20 @@
-import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { NextResponse } from 'next/server';
+import { initializeApp, getApps, cert } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+
+function getAdminDb() {
+    if (!getApps().length) {
+        initializeApp({
+            credential: cert({
+                projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+                clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+            }),
+        });
+    }
+    return getFirestore();
+}
 
 export async function POST(req: Request) {
     try {
@@ -10,30 +24,26 @@ export async function POST(req: Request) {
             return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
         }
 
-        // Check if user already exists
-        const existingUser = await prisma.user.findUnique({
-            where: { email }
-        });
+        const db = getAdminDb();
 
-        if (existingUser) {
+        // Check if user already exists
+        const existing = await db.collection('users').where('email', '==', email).limit(1).get();
+        if (!existing.empty) {
             return NextResponse.json({ message: 'User with this email already exists' }, { status: 409 });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        const user = await prisma.user.create({
-            data: {
-                name,
-                email,
-                password: hashedPassword,
-                role
-            }
+        const docRef = await db.collection('users').add({
+            name,
+            email,
+            password: hashedPassword,
+            role,
+            createdAt: new Date().toISOString(),
+            status: 'active',
         });
 
-        // Don't send the password hash back
-        const { password: _, ...userWithoutPassword } = user;
-
-        return NextResponse.json({ user: userWithoutPassword, message: 'User created successfully' }, { status: 201 });
+        return NextResponse.json({ user: { id: docRef.id, name, email, role }, message: 'User created successfully' }, { status: 201 });
     } catch (error) {
         console.error('Registration error:', error);
         return NextResponse.json({ message: 'An error occurred during registration' }, { status: 500 });

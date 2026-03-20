@@ -1,7 +1,22 @@
-import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+// Initialize Firebase Admin SDK (server-side only)
+function getAdminDb() {
+    if (!getApps().length) {
+        initializeApp({
+            credential: cert({
+                projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+                clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+                privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+            }),
+        });
+    }
+    return getFirestore();
+}
 
 export const authOptions: NextAuthOptions = {
     providers: [
@@ -16,26 +31,40 @@ export const authOptions: NextAuthOptions = {
                     throw new Error("Missing email or password");
                 }
 
-                const user = await prisma.user.findUnique({
-                    where: { email: credentials.email }
-                });
+                try {
+                    const db = getAdminDb();
+                    const snapshot = await db.collection('users')
+                        .where('email', '==', credentials.email)
+                        .limit(1)
+                        .get();
 
-                if (!user || !user.password) {
-                    throw new Error("Invalid credentials");
+                    if (snapshot.empty) {
+                        throw new Error("Invalid credentials");
+                    }
+
+                    const userDoc = snapshot.docs[0];
+                    const user = { id: userDoc.id, ...userDoc.data() } as any;
+
+                    if (!user.password) {
+                        throw new Error("Invalid credentials");
+                    }
+
+                    const isValid = await bcrypt.compare(credentials.password, user.password);
+
+                    if (!isValid) {
+                        throw new Error("Invalid credentials");
+                    }
+
+                    return {
+                        id: user.id,
+                        email: user.email,
+                        name: user.name,
+                        role: user.role,
+                    };
+                } catch (error: any) {
+                    if (error.message === "Invalid credentials") throw error;
+                    throw new Error("Authentication failed");
                 }
-
-                const isValid = await bcrypt.compare(credentials.password, user.password);
-
-                if (!isValid) {
-                    throw new Error("Invalid credentials");
-                }
-
-                return {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    role: user.role,
-                };
             }
         })
     ],
@@ -60,7 +89,7 @@ export const authOptions: NextAuthOptions = {
     },
     session: {
         strategy: "jwt",
-        maxAge: 30 * 24 * 60 * 60, // 30 Days
+        maxAge: 30 * 24 * 60 * 60,
     },
     secret: process.env.NEXTAUTH_SECRET || "ac3_f4c4d3s_s3cr3t_k3y_for_mVP",
 };
